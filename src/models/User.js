@@ -7,7 +7,9 @@ const userSchema = new mongoose.Schema(
     passwordHash: { type: String, required: true },
     phone: { type: String, trim: true },
     profilePhotoUrl: { type: String, trim: true },
-    isSellerVerified: { type: Boolean, default: false }
+    isSellerVerified: { type: Boolean, default: false },
+    passwordResetOtp: { type: String, select: false },
+    passwordResetExpires: { type: Date, select: false }
   },
   { timestamps: true }
 );

@@ -1,5 +1,19 @@
+const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+
+const RESET_OTP_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
+
+function generatePasswordResetOtp() {
+  const otp = String(crypto.randomInt(100000, 1000000));
+  const hashed = hashPasswordResetOtp(otp);
+  const expires = new Date(Date.now() + RESET_OTP_EXPIRY_MS);
+  return { otp, hashed, expires };
+}
+
+function hashPasswordResetOtp(otp) {
+  return crypto.createHash("sha256").update(String(otp).trim()).digest("hex");
+}
 
 async function hashPassword(password) {
   const salt = await bcrypt.genSalt(10);
@@ -25,5 +39,11 @@ function signJwt(user) {
   );
 }
 
-module.exports = { hashPassword, verifyPassword, signJwt };
+module.exports = {
+  hashPassword,
+  verifyPassword,
+  signJwt,
+  generatePasswordResetOtp,
+  hashPasswordResetOtp
+};
 

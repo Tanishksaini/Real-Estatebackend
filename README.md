@@ -11,9 +11,14 @@
 ### Auth (Email + Password + JWT)
 
 - `POST /api/auth/signup`
-  - Body: `{ "name?": "Tanis", "email": "a@b.com", "password": "secret123", "phone?": "..." }`
+  - Body: `{ "name?": "Tanis", "email": "a@b.com", "password": "secret123", "confirmPassword": "secret123", "phone?": "..." }`
 - `POST /api/auth/login`
   - Body: `{ "email": "a@b.com", "password": "secret123" }`
+- `POST /api/auth/forgot-password`
+  - Body: `{ "email": "a@b.com" }`
+  - Sends a **6-digit OTP** to email via **EmailJS** (valid 10 minutes). Configure `EMAILJS_*` in `.env`.
+- `POST /api/auth/reset-password`
+  - Body: `{ "email": "a@b.com", "otp": "123456", "password": "newpass123", "confirmPassword": "newpass123" }`
 
 Use header: `Authorization: Bearer <token>`
 
