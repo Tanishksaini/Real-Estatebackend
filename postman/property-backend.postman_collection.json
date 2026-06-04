@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Property Backend API",
-    "description": "Postman collection for the Property Backend (email/password + JWT).",
+    "description": "Property backend — JWT auth (email/password), EmailJS OTP forgot-password, properties CRUD.\n\n**Auth flow (recommended order):**\n1. Signup (confirmPassword required)\n2. Login\n3. Forgot password → OTP email (EmailJS)\n4. Reset password → email + otp + password + confirmPassword\n\n**Env vars:** `baseUrl`, `email`, `password`, `resetOtp`, `token`, `propertyId`\n\nDev tip: set `PASSWORD_RESET_RETURN_OTP=true` in `.env` so forgot-password returns `otp` in response for Postman.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -10,7 +10,6 @@
       "script": {
         "type": "text/javascript",
         "exec": [
-          "// Auto-add JWT if present",
           "const token = pm.environment.get('token');",
           "if (token) {",
           "  pm.request.headers.upsert({ key: 'Authorization', value: `Bearer ${token}` });",
@@ -25,32 +24,43 @@
       "item": [
         {
           "name": "GET /health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('ok true', () => pm.expect(pm.response.json().ok).to.eql(true));"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "GET",
             "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/health",
-              "host": ["{{baseUrl}}"],
-              "path": ["health"]
-            }
+            "url": "{{baseUrl}}/health"
           }
         }
       ]
     },
     {
       "name": "Auth",
+      "description": "Signup needs confirmPassword. Forgot-password sends 6-digit OTP via EmailJS. Reset-password needs email, otp, password, confirmPassword.",
       "item": [
         {
-          "name": "POST /api/auth/signup",
+          "name": "1. POST /api/auth/signup",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
                   "const json = pm.response.json();",
-                  "if (json && json.token) pm.environment.set('token', json.token);",
-                  "if (json && json.user && json.user.id) pm.environment.set('userId', json.user.id);"
+                  "if (json.token) pm.environment.set('token', json.token);",
+                  "if (json.user && json.user.id) pm.environment.set('userId', json.user.id);",
+                  "if (json.user && json.user.email) pm.environment.set('email', json.user.email);"
                 ]
               }
             }
@@ -60,26 +70,23 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Test User\",\n  \"email\": \"test@example.com\",\n  \"password\": \"secret123\",\n  \"confirmPassword\": \"secret123\",\n  \"phone\": \"9999999999\"\n}\n"
+              "raw": "{\n  \"name\": \"Test User\",\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"confirmPassword\": \"{{password}}\",\n  \"phone\": \"9999999999\"\n}"
             },
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/signup",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "signup"]
-            }
+            "url": "{{baseUrl}}/api/auth/signup"
           }
         },
         {
-          "name": "POST /api/auth/login",
+          "name": "2. POST /api/auth/login",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "const json = pm.response.json();",
-                  "if (json && json.token) pm.environment.set('token', json.token);",
-                  "if (json && json.user && json.user.id) pm.environment.set('userId', json.user.id);"
+                  "if (json.token) pm.environment.set('token', json.token);",
+                  "if (json.user && json.user.id) pm.environment.set('userId', json.user.id);"
                 ]
               }
             }
@@ -89,25 +96,26 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"test@example.com\",\n  \"password\": \"secret123\"\n}\n"
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
             },
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/login",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "login"]
-            }
+            "url": "{{baseUrl}}/api/auth/login"
           }
         },
         {
-          "name": "POST /api/auth/forgot-password",
+          "name": "3. POST /api/auth/forgot-password (EmailJS OTP)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "const json = pm.response.json();",
-                  "if (json && json.otp) pm.environment.set('resetOtp', json.otp);"
+                  "pm.test('Has message', () => pm.expect(json.message).to.be.a('string'));",
+                  "if (json.otp) {",
+                  "  pm.environment.set('resetOtp', json.otp);",
+                  "  console.log('OTP saved to resetOtp (dev mode)');",
+                  "}"
                 ]
               }
             }
@@ -117,25 +125,24 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"test@example.com\"\n}\n"
+              "raw": "{\n  \"email\": \"{{email}}\"\n}"
             },
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/forgot-password",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "forgot-password"]
-            }
+            "url": "{{baseUrl}}/api/auth/forgot-password",
+            "description": "Sends 6-digit OTP to email via EmailJS. If PASSWORD_RESET_RETURN_OTP=true, response includes `otp` and Postman saves it to `resetOtp`."
           }
         },
         {
-          "name": "POST /api/auth/reset-password",
+          "name": "4. POST /api/auth/reset-password (OTP + confirmPassword)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "const json = pm.response.json();",
-                  "if (json && json.token) pm.environment.set('token', json.token);"
+                  "if (json.token) pm.environment.set('token', json.token);",
+                  "pm.test('Password reset message', () => pm.expect(json.message).to.include('successful'));"
                 ]
               }
             }
@@ -145,13 +152,10 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"test@example.com\",\n  \"otp\": \"{{resetOtp}}\",\n  \"password\": \"newsecret123\",\n  \"confirmPassword\": \"newsecret123\"\n}\n"
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"otp\": \"{{resetOtp}}\",\n  \"password\": \"newsecret123\",\n  \"confirmPassword\": \"newsecret123\"\n}"
             },
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/reset-password",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "reset-password"]
-            }
+            "url": "{{baseUrl}}/api/auth/reset-password",
+            "description": "After forgot-password, enter OTP from email into `resetOtp` env (or use dev auto-save). Updates password and returns new JWT."
           }
         }
       ]
@@ -164,11 +168,7 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/me",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "me"]
-            }
+            "url": "{{baseUrl}}/api/me"
           }
         },
         {
@@ -178,13 +178,17 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Updated Name\",\n  \"phone\": \"8888888888\"\n}\n"
+              "raw": "{\n  \"name\": \"Updated Name\",\n  \"phone\": \"8888888888\"\n}"
             },
-            "url": {
-              "raw": "{{baseUrl}}/api/me",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "me"]
-            }
+            "url": "{{baseUrl}}/api/me"
+          }
+        },
+        {
+          "name": "DELETE /api/me",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/me"
           }
         },
         {
@@ -192,11 +196,7 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/me/favorites",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "me", "favorites"]
-            }
+            "url": "{{baseUrl}}/api/me/favorites"
           }
         },
         {
@@ -204,11 +204,7 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/me/recently-viewed",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "me", "recently-viewed"]
-            }
+            "url": "{{baseUrl}}/api/me/recently-viewed"
           }
         },
         {
@@ -216,23 +212,50 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/me/contacted",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "me", "contacted"]
-            }
+            "url": "{{baseUrl}}/api/me/contacted"
           }
         },
         {
           "name": "GET /api/me/notifications",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.items && json.items[0] && json.items[0]._id) {",
+                  "  pm.environment.set('notificationId', json.items[0]._id);",
+                  "}"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "GET",
             "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/me/notifications",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "me", "notifications"]
-            }
+            "url": "{{baseUrl}}/api/me/notifications"
+          }
+        },
+        {
+          "name": "POST /api/me/notifications/:id/read",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/me/notifications/{{notificationId}}/read"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "GET /api/users/:id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/users/{{userId}}"
           }
         }
       ]
@@ -246,12 +269,17 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/properties?sort=latest&limit=10",
+              "raw": "{{baseUrl}}/api/properties?sort=latest&limit=10&city=Meerut",
               "host": ["{{baseUrl}}"],
               "path": ["api", "properties"],
               "query": [
                 { "key": "sort", "value": "latest" },
-                { "key": "limit", "value": "10" }
+                { "key": "limit", "value": "10" },
+                { "key": "city", "value": "Meerut", "disabled": true },
+                { "key": "type", "value": "plot", "disabled": true },
+                { "key": "verifiedOnly", "value": "true", "disabled": true },
+                { "key": "minPrice", "value": "", "disabled": true },
+                { "key": "maxPrice", "value": "", "disabled": true }
               ]
             }
           }
@@ -284,8 +312,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "const json = pm.response.json();",
-                  "if (json && json.property && json.property._id) pm.environment.set('propertyId', json.property._id);",
-                  "if (json && json.property && json.property.id) pm.environment.set('propertyId', json.property.id);"
+                  "if (json.property && json.property._id) pm.environment.set('propertyId', json.property._id);"
                 ]
               }
             }
@@ -295,13 +322,9 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"type\": \"plot\",\n  \"ownershipType\": \"owner\",\n  \"title\": \"100 Gaz Corner Plot Near Main Road\",\n  \"description\": \"Test listing\",\n  \"location\": {\n    \"state\": \"UP\",\n    \"city\": \"Meerut\",\n    \"localArea\": \"Ganga Nagar\",\n    \"landmark\": \"Near Market\",\n    \"pinCode\": \"250001\"\n  },\n  \"geo\": { \"lat\": 28.9845, \"lng\": 77.7064 },\n  \"area\": { \"value\": 100, \"unit\": \"gaz\" },\n  \"price\": { \"total\": 2000000, \"negotiable\": true },\n  \"specs\": { \"cornerPlot\": true, \"roadWidth\": \"20ft\", \"facing\": \"east\" },\n  \"amenities\": [\"Water Supply\", \"Electricity\"]\n}\n"
+              "raw": "{\n  \"type\": \"plot\",\n  \"ownershipType\": \"owner\",\n  \"title\": \"100 Gaz Corner Plot Near Main Road\",\n  \"description\": \"Test listing\",\n  \"location\": {\n    \"state\": \"UP\",\n    \"city\": \"Meerut\",\n    \"localArea\": \"Ganga Nagar\",\n    \"landmark\": \"Near Market\",\n    \"pinCode\": \"250001\"\n  },\n  \"geo\": { \"lat\": {{lat}}, \"lng\": {{lng}} },\n  \"area\": { \"value\": 100, \"unit\": \"gaz\" },\n  \"price\": { \"total\": 2000000, \"negotiable\": true },\n  \"specs\": { \"cornerPlot\": true, \"roadWidth\": \"20ft\", \"facing\": \"east\" },\n  \"amenities\": [\"Water Supply\", \"Electricity\"]\n}"
             },
-            "url": {
-              "raw": "{{baseUrl}}/api/properties",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "properties"]
-            }
+            "url": "{{baseUrl}}/api/properties"
           }
         },
         {
@@ -309,11 +332,7 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/properties/{{propertyId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "properties", "{{propertyId}}"]
-            }
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}"
           }
         },
         {
@@ -323,13 +342,27 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"status\": \"active\",\n  \"price\": { \"total\": 2100000 }\n}\n"
+              "raw": "{\n  \"status\": \"active\",\n  \"price\": { \"total\": 2100000 }\n}"
             },
-            "url": {
-              "raw": "{{baseUrl}}/api/properties/{{propertyId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "properties", "{{propertyId}}"]
-            }
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}"
+          }
+        },
+        {
+          "name": "POST /api/properties/:id/media (upload)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "photos", "type": "file", "src": [], "description": "Select image files (min 5 for listing)" },
+                { "key": "photos", "type": "file", "src": [] },
+                { "key": "videos", "type": "file", "src": [], "disabled": true },
+                { "key": "registry", "type": "file", "src": [], "disabled": true }
+              ]
+            },
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/media",
+            "description": "Owner only. multipart: photos[], videos[], registry, saleDeed, taxReceipt"
           }
         },
         {
@@ -337,11 +370,7 @@
           "request": {
             "method": "POST",
             "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/properties/{{propertyId}}/favorite",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "properties", "{{propertyId}}", "favorite"]
-            }
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/favorite"
           }
         },
         {
@@ -349,12 +378,11 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"method\": \"call\"\n}\n" },
-            "url": {
-              "raw": "{{baseUrl}}/api/properties/{{propertyId}}/contact",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "properties", "{{propertyId}}", "contact"]
-            }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"method\": \"call\"\n}"
+            },
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contact"
           }
         },
         {
@@ -362,11 +390,7 @@
           "request": {
             "method": "POST",
             "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/properties/{{propertyId}}/share",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "properties", "{{propertyId}}", "share"]
-            }
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/share"
           }
         },
         {
@@ -374,11 +398,7 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/properties/{{propertyId}}/similar",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "properties", "{{propertyId}}", "similar"]
-            }
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/similar"
           }
         },
         {
@@ -386,11 +406,7 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/properties/{{propertyId}}/seller",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "properties", "{{propertyId}}", "seller"]
-            }
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/seller"
           }
         },
         {
@@ -398,11 +414,7 @@
           "request": {
             "method": "POST",
             "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/properties/{{propertyId}}/mark-sold",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "properties", "{{propertyId}}", "mark-sold"]
-            }
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/mark-sold"
           }
         },
         {
@@ -410,15 +422,10 @@
           "request": {
             "method": "DELETE",
             "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/properties/{{propertyId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "properties", "{{propertyId}}"]
-            }
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}"
           }
         }
       ]
     }
   ]
 }
-

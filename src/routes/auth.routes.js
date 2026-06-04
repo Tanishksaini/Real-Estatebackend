@@ -100,7 +100,7 @@ authRouter.post("/forgot-password", validate(forgotPasswordSchema), async (req, 
     const { otp, hashed, expires } = generatePasswordResetOtp();
     user.passwordResetOtp = hashed;
     user.passwordResetExpires = expires;
-    await user.save();
+ await user.save({ validateBeforeSave: false });
 
     await sendPasswordResetOtp(email, otp);
 
