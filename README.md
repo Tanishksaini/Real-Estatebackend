@@ -22,17 +22,17 @@
 
 Use header: `Authorization: Bearer <token>`
 
-### Me / Dashboard APIs
+### Profile / Dashboard APIs
 
-- `GET /api/me` (profile)
-- `PATCH /api/me` (update profile)
-- `DELETE /api/me` (delete account)
-- `GET /api/me/favorites`
-- `GET /api/me/recently-viewed`
-- `GET /api/me/contacted`
-- `GET /api/me/enquiries` (buyer's submitted enquiries)
-- `GET /api/me/notifications`
-- `POST /api/me/notifications/:id/read`
+- `GET /api/profile` (profile)
+- `PATCH /api/profile` (update profile)
+- `DELETE /api/profile` (delete account)
+- `GET /api/profile/favorites`
+- `GET /api/profile/recently-viewed`
+- `GET /api/profile/contacted`
+- `GET /api/profile/enquiries` (buyer's submitted enquiries)
+- `GET /api/profile/notifications`
+- `POST /api/profile/notifications/:id/read`
 
 ### Properties
 

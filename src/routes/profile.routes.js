@@ -10,11 +10,11 @@ const { Notification } = require("../models/Notification");
 const { ContactedProperty } = require("../models/ContactedProperty");
 const { Enquiry } = require("../models/Enquiry");
 
-const meRouter = express.Router();
+const profileRouter = express.Router();
 
-meRouter.use(requireAuth);
+profileRouter.use(requireAuth);
 
-meRouter.get("/", async (req, res, next) => {
+profileRouter.get("/", async (req, res, next) => {
   try {
     const user = await User.findById(req.user.sub);
     if (!user) return res.status(404).json({ error: "User not found" });
@@ -24,7 +24,7 @@ meRouter.get("/", async (req, res, next) => {
   }
 });
 
-const updateMeSchema = z.object({
+const updateProfileSchema = z.object({
   body: z
     .object({
       name: z.string().trim().min(1).optional(),
@@ -34,7 +34,7 @@ const updateMeSchema = z.object({
     .strict()
 });
 
-meRouter.patch("/", validate(updateMeSchema), async (req, res, next) => {
+profileRouter.patch("/", validate(updateProfileSchema), async (req, res, next) => {
   try {
     const user = await User.findByIdAndUpdate(req.user.sub, req.validated.body, { new: true });
     if (!user) return res.status(404).json({ error: "User not found" });
@@ -44,7 +44,7 @@ meRouter.patch("/", validate(updateMeSchema), async (req, res, next) => {
   }
 });
 
-meRouter.delete("/", async (req, res, next) => {
+profileRouter.delete("/", async (req, res, next) => {
   try {
     await Promise.all([
       Favorite.deleteMany({ user: req.user.sub }),
@@ -60,7 +60,7 @@ meRouter.delete("/", async (req, res, next) => {
   }
 });
 
-meRouter.get("/favorites", async (req, res, next) => {
+profileRouter.get("/favorites", async (req, res, next) => {
   try {
     const items = await Favorite.find({ user: req.user.sub })
       .sort({ createdAt: -1 })
@@ -71,7 +71,7 @@ meRouter.get("/favorites", async (req, res, next) => {
   }
 });
 
-meRouter.get("/recently-viewed", async (req, res, next) => {
+profileRouter.get("/recently-viewed", async (req, res, next) => {
   try {
     const items = await RecentlyViewed.find({ user: req.user.sub })
       .sort({ lastViewedAt: -1 })
@@ -83,7 +83,7 @@ meRouter.get("/recently-viewed", async (req, res, next) => {
   }
 });
 
-meRouter.get("/contacted", async (req, res, next) => {
+profileRouter.get("/contacted", async (req, res, next) => {
   try {
     const items = await ContactedProperty.find({ user: req.user.sub })
       .sort({ createdAt: -1 })
@@ -94,7 +94,7 @@ meRouter.get("/contacted", async (req, res, next) => {
   }
 });
 
-meRouter.get("/enquiries", async (req, res, next) => {
+profileRouter.get("/enquiries", async (req, res, next) => {
   try {
     const items = await Enquiry.find({ user: req.user.sub })
       .sort({ createdAt: -1 })
@@ -106,7 +106,7 @@ meRouter.get("/enquiries", async (req, res, next) => {
   }
 });
 
-meRouter.get("/notifications", async (req, res, next) => {
+profileRouter.get("/notifications", async (req, res, next) => {
   try {
     const items = await Notification.find({ user: req.user.sub }).sort({ createdAt: -1 }).limit(200);
     return res.json({ items });
@@ -119,7 +119,7 @@ const markReadSchema = z.object({
   params: z.object({ id: z.string().min(1) })
 });
 
-meRouter.post("/notifications/:id/read", validate(markReadSchema), async (req, res, next) => {
+profileRouter.post("/notifications/:id/read", validate(markReadSchema), async (req, res, next) => {
   try {
     const n = await Notification.findOneAndUpdate(
       { _id: req.validated.params.id, user: req.user.sub },
@@ -133,5 +133,4 @@ meRouter.post("/notifications/:id/read", validate(markReadSchema), async (req, r
   }
 });
 
-module.exports = { meRouter };
-
+module.exports = { profileRouter };

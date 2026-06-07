@@ -11,7 +11,7 @@ const { errorHandler, notFound } = require("./middleware/errors");
 const { authRouter } = require("./routes/auth.routes");
 const { usersRouter } = require("./routes/users.routes");
 const { propertiesRouter } = require("./routes/properties.routes");
-const { meRouter } = require("./routes/me.routes");
+const { profileRouter } = require("./routes/profile.routes");
 
 const app = express();
 
@@ -40,7 +40,7 @@ app.use("/uploads", express.static(path.resolve(process.cwd(), uploadDir)));
 app.get("/health", (req, res) => res.json({ ok: true }));
 
 app.use("/api/auth", authRouter);
-app.use("/api/profile", meRouter);
+app.use("/api/profile", profileRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/properties", propertiesRouter);
 

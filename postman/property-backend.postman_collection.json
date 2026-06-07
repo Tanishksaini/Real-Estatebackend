@@ -161,18 +161,18 @@
       ]
     },
     {
-      "name": "Me (Dashboard)",
+      "name": "Profile (Dashboard)",
       "item": [
         {
-          "name": "GET /api/me",
+          "name": "GET /api/profile",
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/api/me"
+            "url": "{{baseUrl}}/api/profile"
           }
         },
         {
-          "name": "PATCH /api/me",
+          "name": "PATCH /api/profile",
           "request": {
             "method": "PATCH",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
@@ -180,52 +180,52 @@
               "mode": "raw",
               "raw": "{\n  \"name\": \"Updated Name\",\n  \"phone\": \"8888888888\"\n}"
             },
-            "url": "{{baseUrl}}/api/me"
+            "url": "{{baseUrl}}/api/profile"
           }
         },
         {
-          "name": "DELETE /api/me",
+          "name": "DELETE /api/profile",
           "request": {
             "method": "DELETE",
             "header": [],
-            "url": "{{baseUrl}}/api/me"
+            "url": "{{baseUrl}}/api/profile"
           }
         },
         {
-          "name": "GET /api/me/favorites",
+          "name": "GET /api/profile/favorites",
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/api/me/favorites"
+            "url": "{{baseUrl}}/api/profile/favorites"
           }
         },
         {
-          "name": "GET /api/me/recently-viewed",
+          "name": "GET /api/profile/recently-viewed",
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/api/me/recently-viewed"
+            "url": "{{baseUrl}}/api/profile/recently-viewed"
           }
         },
         {
-          "name": "GET /api/me/contacted",
+          "name": "GET /api/profile/contacted",
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/api/me/contacted"
+            "url": "{{baseUrl}}/api/profile/contacted"
           }
         },
         {
-          "name": "GET /api/me/enquiries",
+          "name": "GET /api/profile/enquiries",
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/api/me/enquiries",
+            "url": "{{baseUrl}}/api/profile/enquiries",
             "description": "Enquiries submitted by logged-in buyer"
           }
         },
         {
-          "name": "GET /api/me/notifications",
+          "name": "GET /api/profile/notifications",
           "event": [
             {
               "listen": "test",
@@ -243,15 +243,15 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/api/me/notifications"
+            "url": "{{baseUrl}}/api/profile/notifications"
           }
         },
         {
-          "name": "POST /api/me/notifications/:id/read",
+          "name": "POST /api/profile/notifications/:id/read",
           "request": {
             "method": "POST",
             "header": [],
-            "url": "{{baseUrl}}/api/me/notifications/{{notificationId}}/read"
+            "url": "{{baseUrl}}/api/profile/notifications/{{notificationId}}/read"
           }
         }
       ]
