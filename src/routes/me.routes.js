@@ -8,6 +8,7 @@ const { Favorite } = require("../models/Favorite");
 const { RecentlyViewed } = require("../models/RecentlyViewed");
 const { Notification } = require("../models/Notification");
 const { ContactedProperty } = require("../models/ContactedProperty");
+const { Enquiry } = require("../models/Enquiry");
 
 const meRouter = express.Router();
 
@@ -49,7 +50,8 @@ meRouter.delete("/", async (req, res, next) => {
       Favorite.deleteMany({ user: req.user.sub }),
       RecentlyViewed.deleteMany({ user: req.user.sub }),
       Notification.deleteMany({ user: req.user.sub }),
-      ContactedProperty.deleteMany({ user: req.user.sub })
+      ContactedProperty.deleteMany({ user: req.user.sub }),
+      Enquiry.deleteMany({ user: req.user.sub })
     ]);
     await User.findByIdAndDelete(req.user.sub);
     return res.json({ ok: true });
@@ -86,6 +88,18 @@ meRouter.get("/contacted", async (req, res, next) => {
     const items = await ContactedProperty.find({ user: req.user.sub })
       .sort({ createdAt: -1 })
       .populate("property");
+    return res.json({ items });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+meRouter.get("/enquiries", async (req, res, next) => {
+  try {
+    const items = await Enquiry.find({ user: req.user.sub })
+      .sort({ createdAt: -1 })
+      .populate("property", "title location price status analytics");
+
     return res.json({ items });
   } catch (err) {
     return next(err);

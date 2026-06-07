@@ -69,6 +69,7 @@ const propertySchema = new mongoose.Schema(
 
     analytics: {
       views: { type: Number, default: 0 },
+      enquiries: { type: Number, default: 0 },
       favorites: { type: Number, default: 0 },
       calls: { type: Number, default: 0 },
       shares: { type: Number, default: 0 }

@@ -40,7 +40,7 @@ app.use("/uploads", express.static(path.resolve(process.cwd(), uploadDir)));
 app.get("/health", (req, res) => res.json({ ok: true }));
 
 app.use("/api/auth", authRouter);
-app.use("/api/me", meRouter);
+app.use("/api/profile", meRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/properties", propertiesRouter);
 

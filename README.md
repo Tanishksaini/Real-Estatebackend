@@ -30,6 +30,7 @@ Use header: `Authorization: Bearer <token>`
 - `GET /api/me/favorites`
 - `GET /api/me/recently-viewed`
 - `GET /api/me/contacted`
+- `GET /api/me/enquiries` (buyer's submitted enquiries)
 - `GET /api/me/notifications`
 - `POST /api/me/notifications/:id/read`
 
@@ -41,13 +42,17 @@ Use header: `Authorization: Bearer <token>`
   - Paging: `page,limit`
   - Sort: `latest | nearest | lowestPrice | highestPrice`
 
-- **Public detail**: `GET /api/properties/:id`
+- **Public detail**: `GET /api/properties/:id` (includes `viewCount`, `enquiryCount`, `analytics`; view increments on each open)
+- **Owner analytics**: `GET /api/properties/:id/analytics` (views, enquiries, favorites, calls, shares)
 - **Create** (auth): `POST /api/properties`
 - **Update** (owner): `PATCH /api/properties/:id`
 - **Delete** (owner): `DELETE /api/properties/:id`
 - **Upload media/docs** (owner): `POST /api/properties/:id/media` (multipart)
   - Fields: `photos[]`, `videos[]`, `registry`, `saleDeed`, `taxReceipt`
 - **Mark sold** (owner): `POST /api/properties/:id/mark-sold`
+- **Submit enquiry** (auth): `POST /api/properties/:id/enquiry` body: `{ "message", "name?", "email?", "phone?" }`
+- **List enquiries** (owner): `GET /api/properties/:id/enquiries`
+- **Update enquiry status** (owner): `PATCH /api/properties/:id/enquiries/:enquiryId` body: `{ "status": "pending|contacted|closed" }`
 - **Favorite toggle** (auth): `POST /api/properties/:id/favorite`
 - **Contact tracking** (auth): `POST /api/properties/:id/contact` body: `{ "method": "call|whatsapp|email" }`
 - **Share tracking**: `POST /api/properties/:id/share`

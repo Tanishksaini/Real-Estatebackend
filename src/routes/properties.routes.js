@@ -8,8 +8,11 @@ const { User } = require("../models/User");
 const { Favorite } = require("../models/Favorite");
 const { RecentlyViewed } = require("../models/RecentlyViewed");
 const { ContactedProperty } = require("../models/ContactedProperty");
+const { Enquiry } = require("../models/Enquiry");
+const { Notification } = require("../models/Notification");
 const { requireAuth } = require("../middleware/auth");
 const { validate } = require("../utils/validate");
+const { formatProperty, formatPropertyList } = require("../utils/propertyResponse");
 
 const propertiesRouter = express.Router();
 
@@ -142,7 +145,7 @@ propertiesRouter.get("/", validate(listSchema), async (req, res, next) => {
     pipeline.push({ $skip: skip }, { $limit: limit });
 
     const items = await Property.aggregate(pipeline);
-    return res.json({ page, limit, items });
+    return res.json({ page, limit, items: formatPropertyList(items) });
   } catch (err) {
     return next(err);
   }
@@ -212,7 +215,7 @@ propertiesRouter.post("/", requireAuth, validate(createSchema), async (req, res,
       status: "pending"
     });
 
-    return res.status(201).json({ property: doc });
+    return res.status(201).json({ property: formatProperty(doc) });
   } catch (err) {
     return next(err);
   }
@@ -220,9 +223,14 @@ propertiesRouter.post("/", requireAuth, validate(createSchema), async (req, res,
 
 propertiesRouter.get("/:id", async (req, res, next) => {
   try {
-    const prop = await Property.findById(req.params.id).populate("owner", "name email phone profilePhotoUrl isSellerVerified");
+    const prop = await Property.findById(req.params.id).populate(
+      "owner",
+      "name email phone profilePhotoUrl isSellerVerified"
+    );
     if (!prop) return res.status(404).json({ error: "Property not found" });
 
+    prop.analytics = prop.analytics || {};
+    prop.analytics.views = (prop.analytics.views || 0) + 1;
     await Property.updateOne({ _id: prop._id }, { $inc: { "analytics.views": 1 } });
 
     const auth = req.headers.authorization || "";
@@ -241,7 +249,36 @@ propertiesRouter.get("/:id", async (req, res, next) => {
       }
     }
 
-    return res.json({ property: prop });
+    return res.json({ property: formatProperty(prop) });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+propertiesRouter.get("/:id/analytics", requireAuth, async (req, res, next) => {
+  try {
+    const prop = await Property.findById(req.params.id);
+    if (!prop) return res.status(404).json({ error: "Property not found" });
+    if (String(prop.owner) !== String(req.user.sub)) {
+      return res.status(403).json({ error: "Not allowed" });
+    }
+
+    const analytics = prop.analytics || {};
+    return res.json({
+      propertyId: String(prop._id),
+      viewCount: analytics.views ?? 0,
+      enquiryCount: analytics.enquiries ?? 0,
+      favoriteCount: analytics.favorites ?? 0,
+      callCount: analytics.calls ?? 0,
+      shareCount: analytics.shares ?? 0,
+      analytics: {
+        views: analytics.views ?? 0,
+        enquiries: analytics.enquiries ?? 0,
+        favorites: analytics.favorites ?? 0,
+        calls: analytics.calls ?? 0,
+        shares: analytics.shares ?? 0
+      }
+    });
   } catch (err) {
     return next(err);
   }
@@ -313,7 +350,7 @@ propertiesRouter.patch("/:id", requireAuth, validate(updateSchema), async (req, 
     }
 
     await prop.save();
-    return res.json({ property: prop });
+    return res.json({ property: formatProperty(prop) });
   } catch (err) {
     return next(err);
   }
@@ -328,7 +365,8 @@ propertiesRouter.delete("/:id", requireAuth, async (req, res, next) => {
     await Promise.all([
       Favorite.deleteMany({ property: prop._id }),
       RecentlyViewed.deleteMany({ property: prop._id }),
-      ContactedProperty.deleteMany({ property: prop._id })
+      ContactedProperty.deleteMany({ property: prop._id }),
+      Enquiry.deleteMany({ property: prop._id })
     ]);
     await Property.deleteOne({ _id: prop._id });
     return res.json({ ok: true });
@@ -370,7 +408,7 @@ propertiesRouter.post(
       }
 
       await prop.save();
-      return res.json({ property: prop });
+      return res.json({ property: formatProperty(prop) });
     } catch (err) {
       return next(err);
     }
@@ -385,7 +423,7 @@ propertiesRouter.post("/:id/mark-sold", requireAuth, async (req, res, next) => {
 
     prop.status = "sold";
     await prop.save();
-    return res.json({ property: prop });
+    return res.json({ property: formatProperty(prop) });
   } catch (err) {
     return next(err);
   }
@@ -437,6 +475,119 @@ propertiesRouter.post("/:id/contact", requireAuth, validate(contactSchema), asyn
   }
 });
 
+const enquirySchema = z.object({
+  body: z.object({
+    name: z.string().trim().min(1).max(100).optional(),
+    email: z.string().trim().email().optional(),
+    phone: z.string().trim().min(6).max(20).optional(),
+    message: z.string().trim().min(5).max(1000)
+  })
+});
+
+propertiesRouter.post("/:id/enquiry", requireAuth, validate(enquirySchema), async (req, res, next) => {
+  try {
+    const prop = await Property.findById(req.params.id);
+    if (!prop) return res.status(404).json({ error: "Property not found" });
+    if (prop.status !== "active") {
+      return res.status(400).json({ error: "Enquiries are only allowed on active properties" });
+    }
+    if (String(prop.owner) === String(req.user.sub)) {
+      return res.status(400).json({ error: "You cannot enquire on your own property" });
+    }
+
+    const user = await User.findById(req.user.sub);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const b = req.validated.body;
+    const enquiry = await Enquiry.create({
+      property: prop._id,
+      user: user._id,
+      name: b.name || user.name || "User",
+      email: b.email || user.email,
+      phone: b.phone || user.phone,
+      message: b.message
+    });
+
+    await Property.updateOne({ _id: prop._id }, { $inc: { "analytics.enquiries": 1 } });
+
+    await Notification.create({
+      user: prop.owner,
+      type: "property_enquiry",
+      title: "New property enquiry",
+      body: `${enquiry.name} enquired about "${prop.title}"`,
+      data: { propertyId: String(prop._id), enquiryId: String(enquiry._id) }
+    });
+
+    return res.status(201).json({
+      message: "Enquiry submitted successfully",
+      enquiry,
+      viewCount: prop.analytics?.views ?? 0,
+      enquiryCount: (prop.analytics?.enquiries ?? 0) + 1
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+propertiesRouter.get("/:id/enquiries", requireAuth, async (req, res, next) => {
+  try {
+    const prop = await Property.findById(req.params.id);
+    if (!prop) return res.status(404).json({ error: "Property not found" });
+    if (String(prop.owner) !== String(req.user.sub)) {
+      return res.status(403).json({ error: "Not allowed" });
+    }
+
+    const items = await Enquiry.find({ property: prop._id })
+      .sort({ createdAt: -1 })
+      .populate("user", "name email phone profilePhotoUrl");
+
+    return res.json({
+      propertyId: String(prop._id),
+      viewCount: prop.analytics?.views ?? 0,
+      enquiryCount: prop.analytics?.enquiries ?? 0,
+      items
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+const updateEnquirySchema = z.object({
+  params: z.object({
+    id: z.string().min(1),
+    enquiryId: z.string().min(1)
+  }),
+  body: z.object({
+    status: z.enum(["pending", "contacted", "closed"])
+  })
+});
+
+propertiesRouter.patch(
+  "/:id/enquiries/:enquiryId",
+  requireAuth,
+  validate(updateEnquirySchema),
+  async (req, res, next) => {
+    try {
+      const prop = await Property.findById(req.validated.params.id);
+      if (!prop) return res.status(404).json({ error: "Property not found" });
+      if (String(prop.owner) !== String(req.user.sub)) {
+        return res.status(403).json({ error: "Not allowed" });
+      }
+
+      const enquiry = await Enquiry.findOneAndUpdate(
+        { _id: req.validated.params.enquiryId, property: prop._id },
+        { status: req.validated.body.status },
+        { new: true }
+      ).populate("user", "name email phone profilePhotoUrl");
+
+      if (!enquiry) return res.status(404).json({ error: "Enquiry not found" });
+      return res.json({ enquiry });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
 propertiesRouter.post("/:id/share", async (req, res, next) => {
   try {
     const prop = await Property.findById(req.params.id);
@@ -462,7 +613,7 @@ propertiesRouter.get("/:id/similar", async (req, res, next) => {
       .sort({ createdAt: -1 })
       .limit(10);
 
-    return res.json({ items });
+    return res.json({ items: formatPropertyList(items) });
   } catch (err) {
     return next(err);
   }
