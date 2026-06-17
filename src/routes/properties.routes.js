@@ -239,7 +239,7 @@ propertiesRouter.post("/", requireAuth, upload.any(), validate(createSchema), as
     const pricePerSqFt =
       sqft && sqft > 0 ? Math.round((b.price.total / sqft) * 100) / 100 : undefined;
 
-    // Process uploaded files or use defaults
+    // Process uploaded files
     const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
     const videoExtensions = [".mp4", ".avi", ".mov", ".mkv", ".webm"];
 
@@ -251,14 +251,10 @@ propertiesRouter.post("/", requireAuth, upload.any(), validate(createSchema), as
       .filter(f => videoExtensions.some(ext => f.originalname.toLowerCase().endsWith(ext)))
       .map(f => `/uploads/${f.filename}`);
 
-    // Default images and reel if none uploaded
-    const defaultImages = [
-      "https://images.pexels.com/photos/106399/pexels-photo-106399.jpeg?auto=compress&cs=tinysrgb&w=800",
-      "https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg?auto=compress&cs=tinysrgb&w=800",
-      "https://images.pexels.com/photos/271816/pexels-photo-271816.jpeg?auto=compress&cs=tinysrgb&w=800"
-    ];
-    
-    const defaultReel = "https://videos.pexels.com/video-files/3393152/3393152-sd_640_360_24fps.mp4";
+    // Validate that at least 1 photo is uploaded
+    if (uploadedPhotos.length === 0) {
+      return res.status(400).json({ error: "At least 1 photo is required" });
+    }
 
     const doc = await Property.create({
       owner: req.user.sub,
@@ -274,8 +270,8 @@ propertiesRouter.post("/", requireAuth, upload.any(), validate(createSchema), as
       specs: b.specs || {},
       amenities: b.amenities || [],
       media: {
-        photos: uploadedPhotos.length > 0 ? uploadedPhotos : defaultImages,
-        videos: uploadedVideos.length > 0 ? uploadedVideos : [defaultReel]
+        photos: uploadedPhotos,
+        videos: uploadedVideos
       },
       status: "pending"
     });
