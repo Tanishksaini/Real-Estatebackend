@@ -18,7 +18,8 @@ profileRouter.get("/", async (req, res, next) => {
   try {
     const user = await User.findById(req.user.sub);
     if (!user) return res.status(404).json({ error: "User not found" });
-    return res.json({ user: user.toSafeJSON() });
+    const safeUser = user.toSafeJSON();
+    return res.json({ user: safeUser, profile: safeUser });
   } catch (err) {
     return next(err);
   }
@@ -29,16 +30,25 @@ const updateProfileSchema = z.object({
     .object({
       name: z.string().trim().min(1).optional(),
       phone: z.string().trim().min(6).max(20).optional(),
-      profilePhotoUrl: z.string().trim().min(1).optional()
+      profilePhotoUrl: z.string().trim().min(1).optional(),
+      avatar: z.string().trim().min(1).optional()
     })
     .strict()
 });
 
 profileRouter.patch("/", validate(updateProfileSchema), async (req, res, next) => {
   try {
-    const user = await User.findByIdAndUpdate(req.user.sub, req.validated.body, { new: true });
+    const body = req.validated.body;
+    // Map avatar to profilePhotoUrl if provided
+    if (body.avatar && !body.profilePhotoUrl) {
+      body.profilePhotoUrl = body.avatar;
+    }
+    delete body.avatar;
+    
+    const user = await User.findByIdAndUpdate(req.user.sub, body, { new: true });
     if (!user) return res.status(404).json({ error: "User not found" });
-    return res.json({ user: user.toSafeJSON() });
+    const safeUser = user.toSafeJSON();
+    return res.json({ user: safeUser, profile: safeUser });
   } catch (err) {
     return next(err);
   }
@@ -127,7 +137,7 @@ profileRouter.post("/notifications/:id/read", validate(markReadSchema), async (r
       { new: true }
     );
     if (!n) return res.status(404).json({ error: "Notification not found" });
-    return res.json({ item: n });
+    return res.json({ success: true, item: n });
   } catch (err) {
     return next(err);
   }

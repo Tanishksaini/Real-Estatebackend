@@ -20,7 +20,10 @@ userSchema.methods.toSafeJSON = function toSafeJSON() {
     name: this.name,
     email: this.email,
     phone: this.phone,
+    avatar: this.profilePhotoUrl,
     profilePhotoUrl: this.profilePhotoUrl,
+    role: 'user',
+    verified: this.isSellerVerified,
     isSellerVerified: this.isSellerVerified,
     createdAt: this.createdAt,
     updatedAt: this.updatedAt

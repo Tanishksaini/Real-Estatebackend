@@ -67,6 +67,8 @@ const propertySchema = new mongoose.Schema(
       location: { type: Boolean, default: false }
     },
 
+    featured: { type: Boolean, default: false, index: true },
+
     analytics: {
       views: { type: Number, default: 0 },
       enquiries: { type: Number, default: 0 },

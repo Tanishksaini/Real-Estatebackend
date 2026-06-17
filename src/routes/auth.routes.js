@@ -36,7 +36,7 @@ const signupSchema = z.object({
     .superRefine(passwordMatchRefine)
 });
 
-authRouter.post("/signup", validate(signupSchema), async (req, res, next) => {
+const handleSignup = async (req, res, next) => {
   try {
     const { name, email, password, phone } = req.validated.body;
 
@@ -55,7 +55,10 @@ authRouter.post("/signup", validate(signupSchema), async (req, res, next) => {
   } catch (err) {
     return next(err);
   }
-});
+};
+
+authRouter.post("/signup", validate(signupSchema), handleSignup);
+authRouter.post("/register", validate(signupSchema), handleSignup);
 
 const loginSchema = z.object({
   body: z.object({

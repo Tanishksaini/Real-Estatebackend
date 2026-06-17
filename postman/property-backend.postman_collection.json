@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "Property Backend API",
-    "description": "Property backend — JWT auth (email/password), EmailJS OTP forgot-password, properties CRUD.\n\n**Auth flow (recommended order):**\n1. Signup (confirmPassword required)\n2. Login\n3. Forgot password → OTP email (EmailJS)\n4. Reset password → email + otp + password + confirmPassword\n\n**Env vars:** `baseUrl`, `email`, `password`, `resetOtp`, `token`, `propertyId`\n\nDev tip: set `PASSWORD_RESET_RETURN_OTP=true` in `.env` so forgot-password returns `otp` in response for Postman.",
+    "name": "Property Backend API - Complete",
+    "description": "Property backend — JWT auth (email/password), EmailJS OTP forgot-password, properties CRUD with media.\n\n**Auth Endpoints:** Available at both /api/auth/* and /api/users/* (fallback routes)\n1. Signup - /api/auth/signup, /api/auth/register, /api/users/signup\n2. Login - /api/auth/login, /api/users/login\n3. Forgot password → OTP email (EmailJS)\n4. Reset password → email + otp + password + confirmPassword\n\n**Features:**\n- 3 auto-added sample images + 1 reel when property is created\n- Featured properties filter\n- Dedicated /api/properties/nearest endpoint\n- Media upload at /api/properties/:id/media/upload\n- Avatar field support in profile\n\n**Env vars:** `baseUrl`, `email`, `password`, `resetOtp`, `token`, `propertyId`, `notificationId`, `enquiryId`, `lat`, `lng`, `radiusKm`\n\nDev tip: set `PASSWORD_RESET_RETURN_OTP=true` in `.env` so forgot-password returns `otp` in response for Postman.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -46,7 +46,7 @@
     },
     {
       "name": "Auth",
-      "description": "Signup needs confirmPassword. Forgot-password sends 6-digit OTP via EmailJS. Reset-password needs email, otp, password, confirmPassword.",
+      "description": "Auth endpoints at /api/auth/. Signup needs confirmPassword. Forgot-password sends 6-digit OTP via EmailJS. Reset-password needs email, otp, password, confirmPassword.",
       "item": [
         {
           "name": "1. POST /api/auth/signup",
@@ -73,6 +73,32 @@
               "raw": "{\n  \"name\": \"Test User\",\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"confirmPassword\": \"{{password}}\",\n  \"phone\": \"9999999999\"\n}"
             },
             "url": "{{baseUrl}}/api/auth/signup"
+          }
+        },
+        {
+          "name": "1b. POST /api/auth/register (alias for signup)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "if (json.token) pm.environment.set('token', json.token);",
+                  "if (json.user && json.user.id) pm.environment.set('userId', json.user.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test User\",\n  \"email\": \"register@example.com\",\n  \"password\": \"secret123\",\n  \"confirmPassword\": \"secret123\",\n  \"phone\": \"9999999999\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/register"
           }
         },
         {
@@ -161,7 +187,71 @@
       ]
     },
     {
-      "name": "Profile (Dashboard)",
+      "name": "Auth (/api/users/* - Fallback)",
+      "description": "Alternative auth endpoints at /api/users/ (same as /api/auth/ endpoints)",
+      "item": [
+        {
+          "name": "POST /api/users/signup",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "if (json.token) pm.environment.set('token', json.token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test User\",\n  \"email\": \"users-signup@example.com\",\n  \"password\": \"secret123\",\n  \"confirmPassword\": \"secret123\",\n  \"phone\": \"9999999999\"\n}"
+            },
+            "url": "{{baseUrl}}/api/users/signup"
+          }
+        },
+        {
+          "name": "POST /api/users/login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "if (json.token) pm.environment.set('token', json.token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/users/login"
+          }
+        },
+        {
+          "name": "GET /api/users/:id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/users/{{userId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Profile",
       "item": [
         {
           "name": "GET /api/profile",
@@ -178,9 +268,10 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Updated Name\",\n  \"phone\": \"8888888888\"\n}"
+              "raw": "{\n  \"name\": \"Updated Name\",\n  \"phone\": \"8888888888\",\n  \"avatar\": \"https://example.com/avatar.jpg\"\n}"
             },
-            "url": "{{baseUrl}}/api/profile"
+            "url": "{{baseUrl}}/api/profile",
+            "description": "Update profile: name, phone, avatar (stored as profilePhotoUrl)"
           }
         },
         {
@@ -257,19 +348,6 @@
       ]
     },
     {
-      "name": "Users",
-      "item": [
-        {
-          "name": "GET /api/users/:id",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}/api/users/{{userId}}"
-          }
-        }
-      ]
-    },
-    {
       "name": "Properties",
       "item": [
         {
@@ -286,30 +364,32 @@
                 { "key": "limit", "value": "10" },
                 { "key": "city", "value": "Meerut", "disabled": true },
                 { "key": "type", "value": "plot", "disabled": true },
+                { "key": "featured", "value": "true", "disabled": true },
                 { "key": "verifiedOnly", "value": "true", "disabled": true },
                 { "key": "minPrice", "value": "", "disabled": true },
                 { "key": "maxPrice", "value": "", "disabled": true }
               ]
-            }
+            },
+            "description": "Search & filter: sort, city, type, featured, verifiedOnly, minPrice, maxPrice, page, limit"
           }
         },
         {
-          "name": "GET /api/properties (nearest)",
+          "name": "GET /api/properties/nearest (dedicated endpoint)",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/properties?sort=nearest&lat={{lat}}&lng={{lng}}&radiusKm={{radiusKm}}&limit=10",
+              "raw": "{{baseUrl}}/api/properties/nearest?lat={{lat}}&lng={{lng}}&radiusKm={{radiusKm}}&limit=10",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "properties"],
+              "path": ["api", "properties", "nearest"],
               "query": [
-                { "key": "sort", "value": "nearest" },
                 { "key": "lat", "value": "{{lat}}" },
                 { "key": "lng", "value": "{{lng}}" },
                 { "key": "radiusKm", "value": "{{radiusKm}}" },
                 { "key": "limit", "value": "10" }
               ]
-            }
+            },
+            "description": "Get properties near coordinates. lat & lng required."
           }
         },
         {
@@ -328,12 +408,26 @@
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [],
             "body": {
-              "mode": "raw",
-              "raw": "{\n  \"type\": \"plot\",\n  \"ownershipType\": \"owner\",\n  \"title\": \"100 Gaz Corner Plot Near Main Road\",\n  \"description\": \"Test listing\",\n  \"location\": {\n    \"state\": \"UP\",\n    \"city\": \"Meerut\",\n    \"localArea\": \"Ganga Nagar\",\n    \"landmark\": \"Near Market\",\n    \"pinCode\": \"250001\"\n  },\n  \"geo\": { \"lat\": {{lat}}, \"lng\": {{lng}} },\n  \"area\": { \"value\": 100, \"unit\": \"gaz\" },\n  \"price\": { \"total\": 2000000, \"negotiable\": true },\n  \"specs\": { \"cornerPlot\": true, \"roadWidth\": \"20ft\", \"facing\": \"east\" },\n  \"amenities\": [\"Water Supply\", \"Electricity\"]\n}"
+              "mode": "formdata",
+              "formdata": [
+                { "key": "type", "value": "plot", "type": "text" },
+                { "key": "ownershipType", "value": "owner", "type": "text" },
+                { "key": "title", "value": "100 Gaz Corner Plot Near Main Road", "type": "text" },
+                { "key": "description", "value": "Test listing", "type": "text" },
+                { "key": "location", "value": "{\"state\":\"UP\",\"city\":\"Meerut\",\"localArea\":\"Ganga Nagar\",\"landmark\":\"Near Market\",\"pinCode\":\"250001\"}", "type": "text" },
+                { "key": "geo", "value": "{\"lat\":28.0129,\"lng\":77.7064}", "type": "text" },
+                { "key": "area", "value": "{\"value\":100,\"unit\":\"gaz\"}", "type": "text" },
+                { "key": "price", "value": "{\"total\":2000000,\"negotiable\":true}", "type": "text" },
+                { "key": "specs", "value": "{\"cornerPlot\":true,\"roadWidth\":\"20ft\",\"facing\":\"east\"}", "type": "text" },
+                { "key": "amenities", "value": "[\"Water Supply\",\"Electricity\"]", "type": "text" },
+                { "key": "photos", "type": "file", "src": [], "disabled": true },
+                { "key": "videos", "type": "file", "src": [], "disabled": true }
+              ]
             },
-            "url": "{{baseUrl}}/api/properties"
+            "url": "{{baseUrl}}/api/properties",
+            "description": "Create property with file uploads. Use form-data mode. Optional: add photos (images) and videos files. Auto-adds defaults if no files uploaded."
           }
         },
         {
@@ -355,7 +449,7 @@
             "method": "GET",
             "header": [],
             "url": "{{baseUrl}}/api/properties/{{propertyId}}",
-            "description": "Returns property with viewCount, enquiryCount, and analytics. Each view increments viewCount."
+            "description": "Returns property with viewCount, enquiryCount, images, videos, and analytics. Each view increments viewCount."
           }
         },
         {
@@ -368,33 +462,73 @@
           }
         },
         {
+          "name": "GET /api/properties/:id/seller",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/seller",
+            "description": "Get seller/owner info for property"
+          }
+        },
+        {
+          "name": "GET /api/properties/:id/similar",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/properties/{{propertyId}}/similar?limit=4",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "properties", "{{propertyId}}", "similar"],
+              "query": [
+                { "key": "limit", "value": "4" }
+              ]
+            },
+            "description": "Get similar properties by type & city (default limit: 4)"
+          }
+        },
+        {
           "name": "PATCH /api/properties/:id (update)",
           "request": {
             "method": "PATCH",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"status\": \"active\",\n  \"price\": { \"total\": 2100000 }\n}"
+              "raw": "{\n  \"status\": \"active\",\n  \"price\": { \"total\": 2100000 },\n  \"title\": \"Updated Title\"\n}"
             },
             "url": "{{baseUrl}}/api/properties/{{propertyId}}"
           }
         },
         {
-          "name": "POST /api/properties/:id/media (upload)",
+          "name": "POST /api/properties/:id/media/upload",
           "request": {
             "method": "POST",
             "header": [],
             "body": {
               "mode": "formdata",
               "formdata": [
-                { "key": "photos", "type": "file", "src": [], "description": "Select image files (min 5 for listing)" },
+                { "key": "photos", "type": "file", "src": [], "description": "Select image files" },
                 { "key": "photos", "type": "file", "src": [] },
                 { "key": "videos", "type": "file", "src": [], "disabled": true },
                 { "key": "registry", "type": "file", "src": [], "disabled": true }
               ]
             },
-            "url": "{{baseUrl}}/api/properties/{{propertyId}}/media",
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/media/upload",
             "description": "Owner only. multipart: photos[], videos[], registry, saleDeed, taxReceipt"
+          }
+        },
+        {
+          "name": "POST /api/properties/:id/media (alias)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "photos", "type": "file", "src": [] }
+              ]
+            },
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/media",
+            "description": "Alias for /media/upload (same functionality)"
           }
         },
         {
@@ -402,7 +536,8 @@
           "request": {
             "method": "POST",
             "header": [],
-            "url": "{{baseUrl}}/api/properties/{{propertyId}}/favorite"
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/favorite",
+            "description": "Toggle favorite status. Returns { success, favorited, property }"
           }
         },
         {
@@ -473,7 +608,8 @@
               "mode": "raw",
               "raw": "{\n  \"method\": \"call\"\n}"
             },
-            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contact"
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contact",
+            "description": "Record contact attempt (call/whatsapp/email)"
           }
         },
         {
@@ -481,23 +617,8 @@
           "request": {
             "method": "POST",
             "header": [],
-            "url": "{{baseUrl}}/api/properties/{{propertyId}}/share"
-          }
-        },
-        {
-          "name": "GET /api/properties/:id/similar",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}/api/properties/{{propertyId}}/similar"
-          }
-        },
-        {
-          "name": "GET /api/properties/:id/seller",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}/api/properties/{{propertyId}}/seller"
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/share",
+            "description": "Record share action (increments share count)"
           }
         },
         {
@@ -505,7 +626,8 @@
           "request": {
             "method": "POST",
             "header": [],
-            "url": "{{baseUrl}}/api/properties/{{propertyId}}/mark-sold"
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/mark-sold",
+            "description": "Owner marks property as sold"
           }
         },
         {
@@ -513,7 +635,8 @@
           "request": {
             "method": "DELETE",
             "header": [],
-            "url": "{{baseUrl}}/api/properties/{{propertyId}}"
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}",
+            "description": "Owner deletes property and all related data"
           }
         }
       ]

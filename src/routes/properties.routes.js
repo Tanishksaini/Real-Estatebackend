@@ -55,6 +55,7 @@ const listSchema = z.object({
     city: z.string().trim().optional(),
     localArea: z.string().trim().optional(),
     verifiedOnly: z.string().trim().optional(),
+    featured: z.string().trim().optional(),
     minPrice: z.string().trim().optional(),
     maxPrice: z.string().trim().optional(),
     minArea: z.string().trim().optional(),
@@ -77,6 +78,7 @@ propertiesRouter.get("/", validate(listSchema), async (req, res, next) => {
     const localArea = req.validated.query.localArea;
     const status = req.validated.query.status || "active";
     const verifiedOnly = req.validated.query.verifiedOnly === "true";
+    const featuredOnly = req.validated.query.featured === "true";
 
     const page = Math.max(1, Number(req.validated.query.page || 1));
     const limit = Math.min(50, Math.max(1, Number(req.validated.query.limit || 20)));
@@ -99,6 +101,7 @@ propertiesRouter.get("/", validate(listSchema), async (req, res, next) => {
     if (city) match["location.city"] = new RegExp(`^${escapeRegExp(city)}`, "i");
     if (localArea) match["location.localArea"] = new RegExp(escapeRegExp(localArea), "i");
     if (verifiedOnly) match["verified.property"] = true;
+    if (featuredOnly) match.featured = true;
     if (q) match.$text = { $search: q };
     if (minPrice != null || maxPrice != null) {
       match["price.total"] = {};
@@ -151,6 +154,43 @@ propertiesRouter.get("/", validate(listSchema), async (req, res, next) => {
   }
 });
 
+propertiesRouter.get("/nearest", validate(listSchema), async (req, res, next) => {
+  try {
+    const lat = req.validated.query.lat ? Number(req.validated.query.lat) : null;
+    const lng = req.validated.query.lng ? Number(req.validated.query.lng) : null;
+    const radiusKm = req.validated.query.radiusKm ? Number(req.validated.query.radiusKm) : 10;
+    const limit = Math.min(50, Math.max(1, Number(req.validated.query.limit || 20)));
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ error: "lat and lng are required for nearest endpoint" });
+    }
+
+    const pipeline = [
+      {
+        $geoNear: {
+          near: { type: "Point", coordinates: [lng, lat] },
+          distanceField: "distanceMeters",
+          maxDistance: Math.max(0.1, radiusKm) * 1000,
+          spherical: true,
+          query: { status: "active" }
+        }
+      },
+      {
+        $addFields: {
+          distanceKm: { $divide: ["$distanceMeters", 1000] }
+        }
+      },
+      { $sort: { distanceMeters: 1 } },
+      { $limit: limit }
+    ];
+
+    const items = await Property.aggregate(pipeline);
+    return res.json({ page: 1, limit, items: formatPropertyList(items) });
+  } catch (err) {
+    return next(err);
+  }
+});
+
 const createSchema = z.object({
   body: z.object({
     type: z.enum(["plot", "house", "flat", "shop", "commercial", "office"]),
@@ -188,7 +228,7 @@ const createSchema = z.object({
   })
 });
 
-propertiesRouter.post("/", requireAuth, validate(createSchema), async (req, res, next) => {
+propertiesRouter.post("/", requireAuth, upload.any(), validate(createSchema), async (req, res, next) => {
   try {
     const b = req.validated.body;
 
@@ -198,6 +238,27 @@ propertiesRouter.post("/", requireAuth, validate(createSchema), async (req, res,
 
     const pricePerSqFt =
       sqft && sqft > 0 ? Math.round((b.price.total / sqft) * 100) / 100 : undefined;
+
+    // Process uploaded files or use defaults
+    const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
+    const videoExtensions = [".mp4", ".avi", ".mov", ".mkv", ".webm"];
+
+    const uploadedFiles = req.files || [];
+    const uploadedPhotos = uploadedFiles
+      .filter(f => imageExtensions.some(ext => f.originalname.toLowerCase().endsWith(ext)))
+      .map(f => `/uploads/${f.filename}`);
+    const uploadedVideos = uploadedFiles
+      .filter(f => videoExtensions.some(ext => f.originalname.toLowerCase().endsWith(ext)))
+      .map(f => `/uploads/${f.filename}`);
+
+    // Default images and reel if none uploaded
+    const defaultImages = [
+      "https://images.pexels.com/photos/106399/pexels-photo-106399.jpeg?auto=compress&cs=tinysrgb&w=800",
+      "https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg?auto=compress&cs=tinysrgb&w=800",
+      "https://images.pexels.com/photos/271816/pexels-photo-271816.jpeg?auto=compress&cs=tinysrgb&w=800"
+    ];
+    
+    const defaultReel = "https://videos.pexels.com/video-files/3393152/3393152-sd_640_360_24fps.mp4";
 
     const doc = await Property.create({
       owner: req.user.sub,
@@ -212,6 +273,10 @@ propertiesRouter.post("/", requireAuth, validate(createSchema), async (req, res,
       price: { total: b.price.total, negotiable: !!b.price.negotiable, pricePerSqFt },
       specs: b.specs || {},
       amenities: b.amenities || [],
+      media: {
+        photos: uploadedPhotos.length > 0 ? uploadedPhotos : defaultImages,
+        videos: uploadedVideos.length > 0 ? uploadedVideos : [defaultReel]
+      },
       status: "pending"
     });
 
@@ -415,6 +480,63 @@ propertiesRouter.post(
   }
 );
 
+// Alias: /media/upload for the same endpoint
+propertiesRouter.post(
+  "/:id/media/upload",
+  requireAuth,
+  upload.fields([
+    { name: "photos", maxCount: 20 },
+    { name: "videos", maxCount: 3 },
+    { name: "registry", maxCount: 1 },
+    { name: "saleDeed", maxCount: 1 },
+    { name: "taxReceipt", maxCount: 1 }
+  ]),
+  async (req, res, next) => {
+    try {
+      const prop = await Property.findById(req.params.id);
+      if (!prop) return res.status(404).json({ error: "Property not found" });
+      if (String(prop.owner) !== String(req.user.sub)) return res.status(403).json({ error: "Not allowed" });
+
+      const files = req.files || {};
+      const photos = (files.photos || []).map((f) => `/uploads/${f.filename}`);
+      const videos = (files.videos || []).map((f) => `/uploads/${f.filename}`);
+
+      prop.media = prop.media || { photos: [], videos: [] };
+      prop.media.photos = [...(prop.media.photos || []), ...photos];
+      prop.media.videos = [...(prop.media.videos || []), ...videos];
+
+      if (files.registry?.[0]) prop.documents.registry = `/uploads/${files.registry[0].filename}`;
+      if (files.saleDeed?.[0]) prop.documents.saleDeed = `/uploads/${files.saleDeed[0].filename}`;
+      if (files.taxReceipt?.[0]) prop.documents.taxReceipt = `/uploads/${files.taxReceipt[0].filename}`;
+
+      if (prop.documents.registry || prop.documents.saleDeed || prop.documents.taxReceipt) {
+        prop.verified.property = true;
+      }
+
+      await prop.save();
+      return res.json({ property: formatProperty(prop) });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+      if (files.registry?.[0]) prop.documents.registry = `/uploads/${files.registry[0].filename}`;
+      if (files.saleDeed?.[0]) prop.documents.saleDeed = `/uploads/${files.saleDeed[0].filename}`;
+      if (files.taxReceipt?.[0]) prop.documents.taxReceipt = `/uploads/${files.taxReceipt[0].filename}`;
+
+      if (prop.documents.registry || prop.documents.saleDeed || prop.documents.taxReceipt) {
+        prop.verified.property = true;
+      }
+
+      await prop.save();
+      return res.json({ property: formatProperty(prop) });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
 propertiesRouter.post("/:id/mark-sold", requireAuth, async (req, res, next) => {
   try {
     const prop = await Property.findById(req.params.id);
@@ -438,14 +560,14 @@ propertiesRouter.post("/:id/favorite", requireAuth, async (req, res, next) => {
     if (existing) {
       await Favorite.deleteOne({ _id: existing._id });
       await Property.updateOne({ _id: prop._id }, { $inc: { "analytics.favorites": -1 } });
-      return res.json({ favorited: false });
+      return res.json({ success: true, favorited: false, property: formatProperty(prop) });
     }
 
     await Favorite.create({ user: req.user.sub, property: prop._id });
     await Property.updateOne({ _id: prop._id }, { $inc: { "analytics.favorites": 1 } });
-    return res.json({ favorited: true });
+    return res.json({ success: true, favorited: true, property: formatProperty(prop) });
   } catch (err) {
-    if (err && err.code === 11000) return res.json({ favorited: true });
+    if (err && err.code === 11000) return res.json({ success: true, favorited: true, property: formatProperty(prop) });
     return next(err);
   }
 });
@@ -604,6 +726,8 @@ propertiesRouter.get("/:id/similar", async (req, res, next) => {
     const prop = await Property.findById(req.params.id);
     if (!prop) return res.status(404).json({ error: "Property not found" });
 
+    const limit = Math.min(50, Math.max(1, Number(req.query.limit || 4)));
+
     const items = await Property.find({
       _id: { $ne: prop._id },
       status: "active",
@@ -611,7 +735,7 @@ propertiesRouter.get("/:id/similar", async (req, res, next) => {
       "location.city": prop.location?.city
     })
       .sort({ createdAt: -1 })
-      .limit(10);
+      .limit(limit);
 
     return res.json({ items: formatPropertyList(items) });
   } catch (err) {
