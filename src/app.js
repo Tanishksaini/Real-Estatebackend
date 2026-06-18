@@ -34,6 +34,23 @@ app.use(
   })
 );
 
+// Parse JSON string fields in form-data
+app.use((req, res, next) => {
+  if (req.body) {
+    const jsonFields = ["location", "geo", "area", "price", "specs", "amenities"];
+    jsonFields.forEach(field => {
+      if (req.body[field] && typeof req.body[field] === "string") {
+        try {
+          req.body[field] = JSON.parse(req.body[field]);
+        } catch (e) {
+          // Keep as string if JSON parse fails
+        }
+      }
+    });
+  }
+  next();
+});
+
 const uploadDir = process.env.UPLOAD_DIR || "uploads";
 app.use("/uploads", express.static(path.resolve(process.cwd(), uploadDir)));
 
