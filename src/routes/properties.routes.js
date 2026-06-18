@@ -31,7 +31,27 @@ function toSqft(value, unit) {
       return value;
   }
 }
+// properties_routes.js mein — top pe add karo (upload ke baad)
+function parseFormDataFields(req, res, next) {
+  const jsonFields = ["location", "geo", "area", "price", "specs"];
+  const arrayFields = ["amenities"];
 
+  jsonFields.forEach(field => {
+    if (req.body[field] && typeof req.body[field] === "string") {
+      try { req.body[field] = JSON.parse(req.body[field]); }
+      catch (e) { console.error(`Failed to parse ${field}:`, req.body[field]); }
+    }
+  });
+
+  arrayFields.forEach(field => {
+    if (req.body[field] && typeof req.body[field] === "string") {
+      try { req.body[field] = JSON.parse(req.body[field]); }
+      catch (e) { console.error(`Failed to parse ${field}:`, req.body[field]); }
+    }
+  });
+
+  next();
+}
 function buildUploadStorage() {
   const uploadDir = process.env.UPLOAD_DIR || "uploads";
   return multer.diskStorage({
@@ -228,59 +248,64 @@ const createSchema = z.object({
   })
 });
 
-propertiesRouter.post("/", requireAuth, upload.any(), validate(createSchema), async (req, res, next) => {
-  try {
-    const b = req.validated.body;
+propertiesRouter.post(
+  "/",
+  requireAuth,
+  upload.any(),
+  parseFormDataFields,
+  validate(createSchema),
+  async (req, res, next) => {
+    try {
+      const b = req.validated.body;
 
-    const areaValue = b.area?.value;
-    const areaUnit = b.area?.unit || "sqft";
-    const sqft = toSqft(areaValue, areaUnit);
+      const areaValue = b.area?.value;
+      const areaUnit = b.area?.unit || "sqft";
+      const sqft = toSqft(areaValue, areaUnit);
 
-    const pricePerSqFt =
-      sqft && sqft > 0 ? Math.round((b.price.total / sqft) * 100) / 100 : undefined;
+      const pricePerSqFt =
+        sqft && sqft > 0 ? Math.round((b.price.total / sqft) * 100) / 100 : undefined;
 
-    // Process uploaded files
-    const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
-    const videoExtensions = [".mp4", ".avi", ".mov", ".mkv", ".webm"];
+      const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
+      const videoExtensions = [".mp4", ".avi", ".mov", ".mkv", ".webm"];
 
-    const uploadedFiles = req.files || [];
-    const uploadedPhotos = uploadedFiles
-      .filter(f => imageExtensions.some(ext => f.originalname.toLowerCase().endsWith(ext)))
-      .map(f => `/uploads/${f.filename}`);
-    const uploadedVideos = uploadedFiles
-      .filter(f => videoExtensions.some(ext => f.originalname.toLowerCase().endsWith(ext)))
-      .map(f => `/uploads/${f.filename}`);
+      const uploadedFiles = req.files || [];
+      const uploadedPhotos = uploadedFiles
+        .filter(f => imageExtensions.some(ext => f.originalname.toLowerCase().endsWith(ext)))
+        .map(f => `/uploads/${f.filename}`);
+      const uploadedVideos = uploadedFiles
+        .filter(f => videoExtensions.some(ext => f.originalname.toLowerCase().endsWith(ext)))
+        .map(f => `/uploads/${f.filename}`);
 
-    // Validate that at least 1 photo is uploaded
-    if (uploadedPhotos.length === 0) {
-      return res.status(400).json({ error: "At least 1 photo is required" });
+      if (uploadedPhotos.length === 0) {
+        return res.status(400).json({ error: "At least 1 photo is required" });
+      }
+
+      const doc = await Property.create({
+        owner: req.user.sub,
+        type: b.type,
+        ownershipType: b.ownershipType,
+        purpose: b.purpose || "sell",
+        title: b.title,
+        description: b.description,
+        location: b.location,
+        geo: b.geo ? { type: "Point", coordinates: [b.geo.lng, b.geo.lat] } : undefined,
+        area: b.area ? { value: b.area.value, unit: areaUnit } : undefined,
+        price: { total: b.price.total, negotiable: !!b.price.negotiable, pricePerSqFt },
+        specs: b.specs || {},
+        amenities: b.amenities || [],
+        media: {
+          photos: uploadedPhotos,
+          videos: uploadedVideos
+        },
+        status: "pending"
+      });
+
+      return res.status(201).json({ property: formatProperty(doc) });
+    } catch (err) {
+      return next(err);
     }
-
-    const doc = await Property.create({
-      owner: req.user.sub,
-      type: b.type,
-      ownershipType: b.ownershipType,
-      purpose: b.purpose || "sell",
-      title: b.title,
-      description: b.description,
-      location: b.location,
-      geo: b.geo ? { type: "Point", coordinates: [b.geo.lng, b.geo.lat] } : undefined,
-      area: b.area ? { value: b.area.value, unit: areaUnit } : undefined,
-      price: { total: b.price.total, negotiable: !!b.price.negotiable, pricePerSqFt },
-      specs: b.specs || {},
-      amenities: b.amenities || [],
-      media: {
-        photos: uploadedPhotos,
-        videos: uploadedVideos
-      },
-      status: "pending"
-    });
-
-    return res.status(201).json({ property: formatProperty(doc) });
-  } catch (err) {
-    return next(err);
   }
-});
+);
 
 propertiesRouter.get("/:id", async (req, res, next) => {
   try {
