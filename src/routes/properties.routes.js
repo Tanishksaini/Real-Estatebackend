@@ -517,22 +517,6 @@ propertiesRouter.post(
   }
 );
 
-      if (files.registry?.[0]) prop.documents.registry = `/uploads/${files.registry[0].filename}`;
-      if (files.saleDeed?.[0]) prop.documents.saleDeed = `/uploads/${files.saleDeed[0].filename}`;
-      if (files.taxReceipt?.[0]) prop.documents.taxReceipt = `/uploads/${files.taxReceipt[0].filename}`;
-
-      if (prop.documents.registry || prop.documents.saleDeed || prop.documents.taxReceipt) {
-        prop.verified.property = true;
-      }
-
-      await prop.save();
-      return res.json({ property: formatProperty(prop) });
-    } catch (err) {
-      return next(err);
-    }
-  }
-);
-
 propertiesRouter.post("/:id/mark-sold", requireAuth, async (req, res, next) => {
   try {
     const prop = await Property.findById(req.params.id);
