@@ -114,7 +114,7 @@ authRouter.post("/forgot-password", validate(forgotPasswordSchema), async (req, 
 
     return res.json(response);
   } catch (err) {
-    if (err.message && err.message.includes("EmailJS is not configured")) {
+    if (err.message && err.message.includes("is not configured")) {
       return res.status(500).json({ error: "Email service is not configured" });
     }
     console.error("Forgot password email error:", err);

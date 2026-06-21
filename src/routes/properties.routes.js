@@ -13,6 +13,7 @@ const { Notification } = require("../models/Notification");
 const { requireAuth } = require("../middleware/auth");
 const { validate } = require("../utils/validate");
 const { formatProperty, formatPropertyList } = require("../utils/propertyResponse");
+const { uploadToCloudinary } = require("../utils/cloudinary");
 
 const propertiesRouter = express.Router();
 
@@ -269,16 +270,25 @@ propertiesRouter.post(
       const videoExtensions = [".mp4", ".avi", ".mov", ".mkv", ".webm"];
 
       const uploadedFiles = req.files || [];
-      const uploadedPhotos = uploadedFiles
-        .filter(f => imageExtensions.some(ext => f.originalname.toLowerCase().endsWith(ext)))
-        .map(f => `/uploads/${f.filename}`);
-      const uploadedVideos = uploadedFiles
-        .filter(f => videoExtensions.some(ext => f.originalname.toLowerCase().endsWith(ext)))
-        .map(f => `/uploads/${f.filename}`);
+      const photoFiles = uploadedFiles
+        .filter(f => imageExtensions.some(ext => f.originalname.toLowerCase().endsWith(ext)));
+      const videoFiles = uploadedFiles
+        .filter(f => videoExtensions.some(ext => f.originalname.toLowerCase().endsWith(ext)));
 
-      if (uploadedPhotos.length === 0) {
+      if (photoFiles.length === 0) {
+        const fs = require("fs");
+        uploadedFiles.forEach(f => {
+          try { if (fs.existsSync(f.path)) fs.unlinkSync(f.path); } catch (e) {}
+        });
         return res.status(400).json({ error: "At least 1 photo is required" });
       }
+
+      const uploadedPhotos = await Promise.all(
+        photoFiles.map(f => uploadToCloudinary(f.path, "properties/photos", "image"))
+      );
+      const uploadedVideos = await Promise.all(
+        videoFiles.map(f => uploadToCloudinary(f.path, "properties/videos", "video"))
+      );
 
       const doc = await Property.create({
         owner: req.user.sub,
@@ -297,7 +307,7 @@ propertiesRouter.post(
           photos: uploadedPhotos,
           videos: uploadedVideos
         },
-        status: "pending"
+        status: "active"
       });
 
       return res.status(201).json({ property: formatProperty(doc) });
@@ -306,6 +316,30 @@ propertiesRouter.post(
     }
   }
 );
+
+propertiesRouter.get("/my-listings", requireAuth, async (req, res, next) => {
+  try {
+    const page = Math.max(1, Number(req.query.page || 1));
+    const limit = Math.min(50, Math.max(1, Number(req.query.limit || 20)));
+    const skip = (page - 1) * limit;
+
+    const items = await Property.find({ owner: req.user.sub })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    const total = await Property.countDocuments({ owner: req.user.sub });
+
+    return res.json({ 
+      page, 
+      limit, 
+      total,
+      items: formatPropertyList(items) 
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
 
 propertiesRouter.get("/:id", async (req, res, next) => {
   try {
@@ -461,6 +495,80 @@ propertiesRouter.delete("/:id", requireAuth, async (req, res, next) => {
   }
 });
 
+const handleMediaUpload = async (req, res, next) => {
+  try {
+    const prop = await Property.findById(req.params.id);
+    const files = req.files || {};
+    
+    const allUploadedFiles = [
+      ...(files.photos || []),
+      ...(files.videos || []),
+      ...(files.registry ? [files.registry[0]] : []),
+      ...(files.saleDeed ? [files.saleDeed[0]] : []),
+      ...(files.taxReceipt ? [files.taxReceipt[0]] : [])
+    ];
+
+    if (!prop) {
+      const fs = require("fs");
+      allUploadedFiles.forEach(f => {
+        try { if (fs.existsSync(f.path)) fs.unlinkSync(f.path); } catch (e) {}
+      });
+      return res.status(404).json({ error: "Property not found" });
+    }
+
+    if (String(prop.owner) !== String(req.user.sub)) {
+      const fs = require("fs");
+      allUploadedFiles.forEach(f => {
+        try { if (fs.existsSync(f.path)) fs.unlinkSync(f.path); } catch (e) {}
+      });
+      return res.status(403).json({ error: "Not allowed" });
+    }
+
+    const photosPromises = (files.photos || []).map((f) => uploadToCloudinary(f.path, "properties/photos", "image"));
+    const videosPromises = (files.videos || []).map((f) => uploadToCloudinary(f.path, "properties/videos", "video"));
+
+    const [photos, videos] = await Promise.all([
+      Promise.all(photosPromises),
+      Promise.all(videosPromises)
+    ]);
+
+    prop.media = prop.media || { photos: [], videos: [] };
+    prop.media.photos = [...(prop.media.photos || []), ...photos];
+    prop.media.videos = [...(prop.media.videos || []), ...videos];
+
+    if (files.registry?.[0]) {
+      prop.documents.registry = await uploadToCloudinary(files.registry[0].path, "properties/documents", "auto");
+    }
+    if (files.saleDeed?.[0]) {
+      prop.documents.saleDeed = await uploadToCloudinary(files.saleDeed[0].path, "properties/documents", "auto");
+    }
+    if (files.taxReceipt?.[0]) {
+      prop.documents.taxReceipt = await uploadToCloudinary(files.taxReceipt[0].path, "properties/documents", "auto");
+    }
+
+    if (prop.documents.registry || prop.documents.saleDeed || prop.documents.taxReceipt) {
+      prop.verified.property = true;
+    }
+
+    await prop.save();
+    return res.json({ property: formatProperty(prop) });
+  } catch (err) {
+    const fs = require("fs");
+    const files = req.files || {};
+    const allUploadedFiles = [
+      ...(files.photos || []),
+      ...(files.videos || []),
+      ...(files.registry ? [files.registry[0]] : []),
+      ...(files.saleDeed ? [files.saleDeed[0]] : []),
+      ...(files.taxReceipt ? [files.taxReceipt[0]] : [])
+    ];
+    allUploadedFiles.forEach(f => {
+      try { if (fs.existsSync(f.path)) fs.unlinkSync(f.path); } catch (e) {}
+    });
+    return next(err);
+  }
+};
+
 propertiesRouter.post(
   "/:id/media",
   requireAuth,
@@ -471,34 +579,7 @@ propertiesRouter.post(
     { name: "saleDeed", maxCount: 1 },
     { name: "taxReceipt", maxCount: 1 }
   ]),
-  async (req, res, next) => {
-    try {
-      const prop = await Property.findById(req.params.id);
-      if (!prop) return res.status(404).json({ error: "Property not found" });
-      if (String(prop.owner) !== String(req.user.sub)) return res.status(403).json({ error: "Not allowed" });
-
-      const files = req.files || {};
-      const photos = (files.photos || []).map((f) => `/uploads/${f.filename}`);
-      const videos = (files.videos || []).map((f) => `/uploads/${f.filename}`);
-
-      prop.media = prop.media || { photos: [], videos: [] };
-      prop.media.photos = [...(prop.media.photos || []), ...photos];
-      prop.media.videos = [...(prop.media.videos || []), ...videos];
-
-      if (files.registry?.[0]) prop.documents.registry = `/uploads/${files.registry[0].filename}`;
-      if (files.saleDeed?.[0]) prop.documents.saleDeed = `/uploads/${files.saleDeed[0].filename}`;
-      if (files.taxReceipt?.[0]) prop.documents.taxReceipt = `/uploads/${files.taxReceipt[0].filename}`;
-
-      if (prop.documents.registry || prop.documents.saleDeed || prop.documents.taxReceipt) {
-        prop.verified.property = true;
-      }
-
-      await prop.save();
-      return res.json({ property: formatProperty(prop) });
-    } catch (err) {
-      return next(err);
-    }
-  }
+  handleMediaUpload
 );
 
 // Alias: /media/upload for the same endpoint
@@ -512,34 +593,7 @@ propertiesRouter.post(
     { name: "saleDeed", maxCount: 1 },
     { name: "taxReceipt", maxCount: 1 }
   ]),
-  async (req, res, next) => {
-    try {
-      const prop = await Property.findById(req.params.id);
-      if (!prop) return res.status(404).json({ error: "Property not found" });
-      if (String(prop.owner) !== String(req.user.sub)) return res.status(403).json({ error: "Not allowed" });
-
-      const files = req.files || {};
-      const photos = (files.photos || []).map((f) => `/uploads/${f.filename}`);
-      const videos = (files.videos || []).map((f) => `/uploads/${f.filename}`);
-
-      prop.media = prop.media || { photos: [], videos: [] };
-      prop.media.photos = [...(prop.media.photos || []), ...photos];
-      prop.media.videos = [...(prop.media.videos || []), ...videos];
-
-      if (files.registry?.[0]) prop.documents.registry = `/uploads/${files.registry[0].filename}`;
-      if (files.saleDeed?.[0]) prop.documents.saleDeed = `/uploads/${files.saleDeed[0].filename}`;
-      if (files.taxReceipt?.[0]) prop.documents.taxReceipt = `/uploads/${files.taxReceipt[0].filename}`;
-
-      if (prop.documents.registry || prop.documents.saleDeed || prop.documents.taxReceipt) {
-        prop.verified.property = true;
-      }
-
-      await prop.save();
-      return res.json({ property: formatProperty(prop) });
-    } catch (err) {
-      return next(err);
-    }
-  }
+  handleMediaUpload
 );
 
 propertiesRouter.post("/:id/mark-sold", requireAuth, async (req, res, next) => {

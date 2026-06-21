@@ -1,38 +1,53 @@
-const emailjs = require("@emailjs/nodejs");
+const nodemailer = require("nodemailer");
 
-function getEmailJsConfig() {
-  const serviceId = process.env.EMAILJS_SERVICE_ID;
-  const templateId = process.env.EMAILJS_TEMPLATE_ID;
-  const publicKey = process.env.EMAILJS_PUBLIC_KEY;
-  const privateKey = process.env.EMAILJS_PRIVATE_KEY;
+function getNodemailerConfig() {
+  const user = process.env.EMAIL_USER;
+  const pass = process.env.EMAIL_PASS;
 
-  if (!serviceId || !templateId || !publicKey || !privateKey) {
+  if (!user || !pass) {
     return null;
   }
 
-  return { serviceId, templateId, publicKey, privateKey };
+  return { user, pass };
 }
 
 async function sendPasswordResetOtp(email, otp) {
-  const cfg = getEmailJsConfig();
+  const cfg = getNodemailerConfig();
   if (!cfg) {
     throw new Error(
-      "EmailJS is not configured. Set EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, EMAILJS_PUBLIC_KEY, and EMAILJS_PRIVATE_KEY in .env"
+      "Nodemailer/Gmail is not configured. Set EMAIL_USER and EMAIL_PASS in your .env file."
     );
   }
 
-  const templateParams = {
-    to_email: email,
-    user_email: email,
-    email,
-    otp,
-    message: `Your password reset OTP is ${otp}. Valid for 10 minutes.`
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: cfg.user,
+      pass: cfg.pass
+    }
+  });
+
+  const mailOptions = {
+    from: `"Real Estate Property App" <${cfg.user}>`,
+    to: email,
+    subject: "Password Reset OTP - Property App",
+    text: `Your password reset OTP is ${otp}. Valid for 10 minutes.`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 5px;">
+        <h2 style="color: #333; text-align: center;">Reset Your Password</h2>
+        <p>Dear User,</p>
+        <p>You requested to reset your password. Please use the following One-Time Password (OTP) to complete the reset process. This OTP is valid for 10 minutes.</p>
+        <div style="background-color: #f9f9f9; border: 1px dashed #ccc; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #4F46E5; margin: 20px 0;">
+          ${otp}
+        </div>
+        <p>If you did not request a password reset, please ignore this email or contact support if you have concerns.</p>
+        <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
+        <p style="font-size: 12px; color: #777; text-align: center;">This is an automated email. Please do not reply.</p>
+      </div>
+    `
   };
 
-  await emailjs.send(cfg.serviceId, cfg.templateId, templateParams, {
-    publicKey: cfg.publicKey,
-    privateKey: cfg.privateKey
-  });
+  await transporter.sendMail(mailOptions);
 }
 
-module.exports = { sendPasswordResetOtp, getEmailJsConfig };
+module.exports = { sendPasswordResetOtp, getNodemailerConfig };

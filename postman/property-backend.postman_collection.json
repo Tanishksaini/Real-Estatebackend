@@ -393,6 +393,23 @@
           }
         },
         {
+          "name": "GET /api/properties/my-listings (auth - user's listings)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/properties/my-listings?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "properties", "my-listings"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            },
+            "description": "Auth required. Get all properties listed by logged-in user with pagination. Returns page, limit, total, and items."
+          }
+        },
+        {
           "name": "POST /api/properties (create)",
           "event": [
             {
