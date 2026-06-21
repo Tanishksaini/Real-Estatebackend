@@ -334,7 +334,8 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/api/profile/notifications"
+            "url": "{{baseUrl}}/api/profile/notifications",
+            "description": "Get notifications for the logged-in user. Includes property_enquiry (for owner) and favorite_enquiry (for users who favorited a property with a new enquiry)."
           }
         },
         {
@@ -579,7 +580,7 @@
               "raw": "{\n  \"name\": \"Buyer Name\",\n  \"phone\": \"9876543210\",\n  \"message\": \"I am interested in this property. Please contact me.\"\n}"
             },
             "url": "{{baseUrl}}/api/properties/{{propertyId}}/enquiry",
-            "description": "Auth required. Buyer submits enquiry on active property (not own listing)."
+            "description": "Auth required. Buyer submits enquiry on active property (not own listing). Triggers notifications for the property owner and all users who have favorited the property."
           }
         },
         {

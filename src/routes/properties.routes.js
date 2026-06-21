@@ -699,6 +699,23 @@ propertiesRouter.post("/:id/enquiry", requireAuth, validate(enquirySchema), asyn
       data: { propertyId: String(prop._id), enquiryId: String(enquiry._id) }
     });
 
+    // Notify all users who favorited this property (excluding the enquirer)
+    const favorites = await Favorite.find({
+      property: prop._id,
+      user: { $ne: user._id }
+    });
+
+    if (favorites.length > 0) {
+      const favoriteNotifications = favorites.map(fav => ({
+        user: fav.user,
+        type: "favorite_enquiry",
+        title: "Enquiry on your favorited property",
+        body: `Someone has enquired about "${prop.title}" which you favorited.`,
+        data: { propertyId: String(prop._id), enquiryId: String(enquiry._id) }
+      }));
+      await Notification.insertMany(favoriteNotifications);
+    }
+
     return res.status(201).json({
       message: "Enquiry submitted successfully",
       enquiry,
