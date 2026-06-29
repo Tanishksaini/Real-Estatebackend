@@ -51,6 +51,26 @@ function parseFormDataFields(req, res, next) {
     }
   });
 
+  // Normalize coordinates to req.body.geo if not already present
+  if (!req.body.geo) {
+    const latVal = req.body.lat ?? req.body.latitude;
+    const lngVal = req.body.lng ?? req.body.longitude ?? req.body.lag ?? req.body.lon ?? req.body.long;
+    
+    if (latVal !== undefined && lngVal !== undefined) {
+      const lat = Number(latVal);
+      const lng = Number(lngVal);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        req.body.geo = { lat, lng };
+      }
+    }
+  }
+
+  // Clean up top-level coordinate keys to avoid Zod validation errors on strict schemas
+  const keysToDelete = ["lat", "lng", "latitude", "longitude", "lag", "lon", "long"];
+  keysToDelete.forEach(k => {
+    delete req.body[k];
+  });
+
   next();
 }
 function buildUploadStorage() {
@@ -828,6 +848,560 @@ propertiesRouter.get("/:id/seller", async (req, res, next) => {
     if (!seller) return res.status(404).json({ error: "Seller not found" });
 
     return res.json({ seller: seller.toSafeJSON() });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+propertiesRouter.get("/:id/map", async (req, res, next) => {
+  try {
+    const prop = await Property.findById(req.params.id);
+    if (!prop) {
+      return res.status(404).send("<h1>Property not found</h1>");
+    }
+
+    if (!prop.geo || !prop.geo.coordinates || prop.geo.coordinates.length !== 2) {
+      const escapeHTML = (str) => {
+        if (!str) return "";
+        return str
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      };
+      return res.status(400).send(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>No Location Data</title>
+            <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600&display=swap" rel="stylesheet">
+            <style>
+              body {
+                background-color: #0f172a;
+                color: #f1f5f9;
+                font-family: 'Plus Jakarta Sans', sans-serif;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                margin: 0;
+                text-align: center;
+              }
+              .card {
+                background: rgba(30, 41, 59, 0.7);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                backdrop-filter: blur(16px);
+                padding: 40px;
+                border-radius: 24px;
+                box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+                max-width: 450px;
+                width: 90%;
+              }
+              h1 { font-size: 24px; margin-bottom: 16px; color: #f43f5e; }
+              p { color: #94a3b8; line-height: 1.6; margin-bottom: 24px; }
+              a {
+                background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+                color: white;
+                text-decoration: none;
+                padding: 12px 24px;
+                border-radius: 12px;
+                font-weight: 600;
+                transition: transform 0.2s, box-shadow 0.2s;
+                display: inline-block;
+              }
+              a:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.4); }
+            </style>
+          </head>
+          <body>
+            <div class="card">
+              <h1>No Coordinates Available</h1>
+              <p>This property ("${escapeHTML(prop.title)}") does not have valid latitude and longitude coordinates configured.</p>
+              <a href="javascript:window.close()">Close Page</a>
+            </div>
+          </body>
+        </html>
+      `);
+    }
+
+    const [lng, lat] = prop.geo.coordinates;
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+    const useGoogleMaps = !!apiKey;
+
+    const escapeHTML = (str) => {
+      if (!str) return "";
+      return str
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    };
+
+    const formattedPrice = prop.price?.total 
+      ? new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(prop.price.total)
+      : "N/A";
+
+    const formattedLocation = [
+      prop.location?.landmark,
+      prop.location?.localArea,
+      prop.location?.city,
+      prop.location?.state,
+      prop.location?.pinCode
+    ].filter(Boolean).join(", ");
+
+    const pageHtml = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Map View - ${escapeHTML(prop.title)}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
+  ${!useGoogleMaps ? `
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  ` : `
+  <script src="https://maps.googleapis.com/maps/api/js?key=${apiKey}"></script>
+  `}
+
+  <style>
+    :root {
+      --bg-color: #0b0f19;
+      --card-bg: rgba(17, 24, 39, 0.85);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --accent: #6366f1;
+      --accent-hover: #4f46e5;
+    }
+    
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #map {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
+    .info-overlay {
+      position: absolute;
+      top: 24px;
+      left: 24px;
+      z-index: 10;
+      max-width: 420px;
+      width: calc(100% - 48px);
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4);
+      animation: slideIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes slideIn {
+      from { transform: translateY(-20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 6px 12px;
+      background: rgba(99, 102, 241, 0.15);
+      color: #818cf8;
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      border-radius: 100px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 12px;
+    }
+
+    .title {
+      font-size: 20px;
+      font-weight: 700;
+      line-height: 1.3;
+      margin-bottom: 8px;
+      color: #ffffff;
+    }
+
+    .price {
+      font-size: 24px;
+      font-weight: 800;
+      color: #34d399;
+      margin-bottom: 16px;
+    }
+
+    .divider {
+      height: 1px;
+      background: var(--border-color);
+      margin: 16px 0;
+    }
+
+    .detail-item {
+      display: flex;
+      align-items: flex-start;
+      margin-bottom: 12px;
+      font-size: 13px;
+    }
+
+    .detail-icon {
+      color: var(--accent);
+      margin-right: 10px;
+      font-size: 16px;
+      width: 20px;
+      text-align: center;
+      margin-top: 2px;
+    }
+
+    .detail-content {
+      flex: 1;
+      line-height: 1.4;
+    }
+
+    .detail-label {
+      color: var(--text-muted);
+      font-weight: 500;
+      margin-bottom: 2px;
+    }
+
+    .detail-value {
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .btn-action {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+      color: white;
+      text-decoration: none;
+      padding: 14px;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 14px;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.2);
+      transition: all 0.2s ease;
+      margin-top: 16px;
+    }
+
+    .btn-action:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.4);
+    }
+
+    .btn-action:active {
+      transform: translateY(0);
+    }
+
+    .coordinate-badge {
+      position: absolute;
+      bottom: 24px;
+      right: 24px;
+      background: rgba(17, 24, 39, 0.8);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 11px;
+      font-family: monospace;
+      color: var(--text-muted);
+      z-index: 10;
+      backdrop-filter: blur(8px);
+      pointer-events: none;
+    }
+
+    /* Sleek zoom controls custom styling for Leaflet */
+    .leaflet-bar {
+      border: 1px solid var(--border-color) !important;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3) !important;
+      border-radius: 10px !important;
+      overflow: hidden;
+    }
+    .leaflet-bar a {
+      background-color: var(--card-bg) !important;
+      color: var(--text-main) !important;
+      border-bottom: 1px solid var(--border-color) !important;
+      transition: all 0.2s;
+    }
+    .leaflet-bar a:hover {
+      background-color: var(--accent) !important;
+      color: white !important;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="info-overlay">
+    <span class="badge">${escapeHTML(prop.type)} - ${escapeHTML(prop.ownershipType)}</span>
+    <h1 class="title">${escapeHTML(prop.title)}</h1>
+    <div class="price">${formattedPrice}</div>
+    
+    <div class="divider"></div>
+    
+    <div class="detail-item">
+      <span class="detail-icon">📍</span>
+      <div class="detail-content">
+        <div class="detail-label">Address</div>
+        <div class="detail-value">${escapeHTML(formattedLocation) || "N/A"}</div>
+      </div>
+    </div>
+
+    ${prop.area?.value ? `
+    <div class="detail-item">
+      <span class="detail-icon">📏</span>
+      <div class="detail-content">
+        <div class="detail-label">Area</div>
+        <div class="detail-value">${prop.area.value} ${escapeHTML(prop.area.unit || 'sqft')}</div>
+      </div>
+    </div>
+    ` : ''}
+
+    ${prop.price?.pricePerSqFt ? `
+    <div class="detail-item">
+      <span class="detail-icon">💰</span>
+      <div class="detail-content">
+        <div class="detail-label">Rate</div>
+        <div class="detail-value">₹${prop.price.pricePerSqFt.toLocaleString('en-IN')}/sqft</div>
+      </div>
+    </div>
+    ` : ''}
+
+    <button class="btn-action" onclick="focusMap()">Center Location</button>
+  </div>
+
+  <div class="coordinate-badge">
+    Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}
+  </div>
+
+  <div id="map"></div>
+
+  <script>
+    const lat = ${lat};
+    const lng = ${lng};
+    let map;
+    let marker;
+
+    const propertyTitle = decodeURIComponent("${encodeURIComponent(prop.title)}");
+
+    function initLeafletMap() {
+      // Use CARTO DB Dark Matter tiles for a premium look matching our dark theme
+      map = L.map('map', {
+        zoomControl: true,
+        attributionControl: false
+      }).setView([lat, lng], 15);
+
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 20
+      }).addTo(map);
+
+      // Custom sleek marker styling
+      const customIcon = L.divIcon({
+        className: 'custom-marker',
+        html: '<div style="background-color: #6366f1; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 10px rgba(99, 102, 241, 0.8); animation: pulse 2s infinite;"></div>',
+        iconSize: [16, 16],
+        iconAnchor: [8, 8]
+      });
+
+      // Add keyframe animation style
+      const style = document.createElement('style');
+      style.type = 'text/css';
+      style.innerHTML = \`
+        @keyframes pulse {
+          0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7); }
+          70% { transform: scale(1); box-shadow: 0 0 0 12px rgba(99, 102, 241, 0); }
+          100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
+        }
+      \`;
+      document.getElementsByTagName('head')[0].appendChild(style);
+
+      marker = L.marker([lat, lng], { icon: customIcon }).addTo(map);
+      
+      const popupContent = \`
+        <div style="color: #0f172a; font-family: sans-serif; font-size: 13px; font-weight: 600;">
+          \${escapeHTML(propertyTitle)}
+        </div>
+      \`;
+      marker.bindPopup(popupContent, { closeButton: false }).openPopup();
+    }
+
+    function initGoogleMap() {
+      const position = { lat: lat, lng: lng };
+      
+      // Slick dark theme styling for Google Maps
+      const darkMapStyle = [
+        { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
+        { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
+        { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
+        {
+          featureType: "administrative.locality",
+          elementType: "labels.text.fill",
+          stylers: [{ color: "#d59563" }],
+        },
+        {
+          featureType: "poi",
+          elementType: "labels.text.fill",
+          stylers: [{ color: "#d59563" }],
+        },
+        {
+          featureType: "poi.park",
+          elementType: "geometry",
+          stylers: [{ color: "#263c3f" }],
+        },
+        {
+          featureType: "poi.park",
+          elementType: "labels.text.fill",
+          stylers: [{ color: "#6b9a76" }],
+        },
+        {
+          featureType: "road",
+          elementType: "geometry",
+          stylers: [{ color: "#38414e" }],
+        },
+        {
+          featureType: "road",
+          elementType: "geometry.stroke",
+          stylers: [{ color: "#212a37" }],
+        },
+        {
+          featureType: "road",
+          elementType: "labels.text.fill",
+          stylers: [{ color: "#9ca5b9" }],
+        },
+        {
+          featureType: "road.highway",
+          elementType: "geometry",
+          stylers: [{ color: "#746855" }],
+        },
+        {
+          featureType: "road.highway",
+          elementType: "geometry.stroke",
+          stylers: [{ color: "#1f2835" }],
+        },
+        {
+          featureType: "road.highway",
+          elementType: "labels.text.fill",
+          stylers: [{ color: "#f3d19c" }],
+        },
+        {
+          featureType: "transit",
+          elementType: "geometry",
+          stylers: [{ color: "#2f3930" }],
+        },
+        {
+          featureType: "transit.station",
+          elementType: "labels.text.fill",
+          stylers: [{ color: "#d59563" }],
+        },
+        {
+          featureType: "water",
+          elementType: "geometry",
+          stylers: [{ color: "#17263c" }],
+        },
+        {
+          featureType: "water",
+          elementType: "labels.text.fill",
+          stylers: [{ color: "#515c6d" }],
+        },
+        {
+          featureType: "water",
+          elementType: "labels.text.stroke",
+          stylers: [{ color: "#17263c" }],
+        },
+      ];
+
+      map = new google.maps.Map(document.getElementById("map"), {
+        zoom: 15,
+        center: position,
+        styles: darkMapStyle,
+        disableDefaultUI: false,
+        zoomControl: true,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: false
+      });
+
+      marker = new google.maps.Marker({
+        position: position,
+        map: map,
+        title: propertyTitle,
+        icon: {
+          path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
+          scale: 6,
+          fillColor: "#6366f1",
+          fillOpacity: 1,
+          strokeColor: "#ffffff",
+          strokeWeight: 2,
+        }
+      });
+
+      const infowindow = new google.maps.InfoWindow({
+        content: \`<div style="color: #0f172a; padding: 4px; font-weight: 600;">\${escapeHTML(propertyTitle)}</div>\`,
+      });
+
+      marker.addListener("click", () => {
+        infowindow.open(map, marker);
+      });
+      
+      infowindow.open(map, marker);
+    }
+
+    function focusMap() {
+      if (${useGoogleMaps}) {
+        if (map) map.panTo({ lat: lat, lng: lng });
+      } else {
+        if (map) map.panTo([lat, lng]);
+      }
+    }
+
+    function escapeHTML(str) {
+      if (!str) return "";
+      return str
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    // Initialize map on load
+    window.onload = function() {
+      if (${useGoogleMaps}) {
+        initGoogleMap();
+      } else {
+        initLeafletMap();
+      }
+    };
+  </script>
+</body>
+</html>
+    `;
+
+    res.setHeader("Content-Type", "text/html");
+    return res.send(pageHtml);
   } catch (err) {
     return next(err);
   }

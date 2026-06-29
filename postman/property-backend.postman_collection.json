@@ -435,7 +435,9 @@
                 { "key": "title", "value": "100 Gaz Corner Plot Near Main Road", "type": "text" },
                 { "key": "description", "value": "Test listing", "type": "text" },
                 { "key": "location", "value": "{\"state\":\"UP\",\"city\":\"Meerut\",\"localArea\":\"Ganga Nagar\",\"landmark\":\"Near Market\",\"pinCode\":\"250001\"}", "type": "text" },
-                { "key": "geo", "value": "{\"lat\":28.0129,\"lng\":77.7064}", "type": "text" },
+                { "key": "geo", "value": "{\"lat\":28.0129,\"lng\":77.7064}", "type": "text", "disabled": true },
+                { "key": "lat", "value": "28.0129", "type": "text" },
+                { "key": "lng", "value": "77.7064", "type": "text" },
                 { "key": "area", "value": "{\"value\":100,\"unit\":\"gaz\"}", "type": "text" },
                 { "key": "price", "value": "{\"total\":2000000,\"negotiable\":true}", "type": "text" },
                 { "key": "specs", "value": "{\"cornerPlot\":true,\"roadWidth\":\"20ft\",\"facing\":\"east\"}", "type": "text" },
@@ -468,6 +470,15 @@
             "header": [],
             "url": "{{baseUrl}}/api/properties/{{propertyId}}",
             "description": "Returns property with viewCount, enquiryCount, images, videos, and analytics. Each view increments viewCount."
+          }
+        },
+        {
+          "name": "GET /api/properties/:id/map (view)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/map",
+            "description": "Serves a beautiful interactive Map View page (renders Google Map or Leaflet fallback) showing the property's location."
           }
         },
         {
@@ -511,7 +522,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"status\": \"active\",\n  \"price\": { \"total\": 2100000 },\n  \"title\": \"Updated Title\"\n}"
+              "raw": "{\n  \"status\": \"active\",\n  \"price\": { \"total\": 2100000 },\n  \"title\": \"Updated Title\",\n  \"lat\": 28.0135,\n  \"lng\": 77.7070\n}"
             },
             "url": "{{baseUrl}}/api/properties/{{propertyId}}"
           }

@@ -54,6 +54,26 @@ app.use((req, res, next) => {
         }
       }
     });
+
+    // Normalize coordinates to req.body.geo if not already present
+    if (!req.body.geo) {
+      const latVal = req.body.lat ?? req.body.latitude;
+      const lngVal = req.body.lng ?? req.body.longitude ?? req.body.lag ?? req.body.lon ?? req.body.long;
+      
+      if (latVal !== undefined && lngVal !== undefined) {
+        const lat = Number(latVal);
+        const lng = Number(lngVal);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          req.body.geo = { lat, lng };
+        }
+      }
+    }
+
+    // Clean up top-level coordinate keys to avoid Zod validation errors on strict schemas
+    const keysToDelete = ["lat", "lng", "latitude", "longitude", "lag", "lon", "long"];
+    keysToDelete.forEach(k => {
+      delete req.body[k];
+    });
   }
   next();
 });
