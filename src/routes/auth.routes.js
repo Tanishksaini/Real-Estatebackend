@@ -11,8 +11,11 @@ const {
 } = require("../utils/auth");
 const { sendPasswordResetOtp } = require("../utils/mail");
 const { validate } = require("../utils/validate");
+const { OAuth2Client } = require("google-auth-library");
 
 const authRouter = express.Router();
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
 
 const passwordMatchRefine = (data, ctx) => {
   if (data.password !== data.confirmPassword) {
@@ -74,6 +77,12 @@ authRouter.post("/login", validate(loginSchema), async (req, res, next) => {
     const user = await User.findOne({ email });
     if (!user) return res.status(401).json({ error: "Invalid email or password" });
 
+    if (!user.passwordHash) {
+      return res.status(400).json({
+        error: "This account was registered using Google. Please log in using Google."
+      });
+    }
+
     const ok = await verifyPassword(password, user.passwordHash);
     if (!ok) return res.status(401).json({ error: "Invalid email or password" });
 
@@ -83,6 +92,61 @@ authRouter.post("/login", validate(loginSchema), async (req, res, next) => {
     return next(err);
   }
 });
+
+const googleLoginSchema = z.object({
+  body: z.object({
+    idToken: z.string().trim().min(1, "Google ID Token is required")
+  })
+});
+
+authRouter.post("/google", validate(googleLoginSchema), async (req, res, next) => {
+  try {
+    const { idToken } = req.validated.body;
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+
+    if (!clientId) {
+      return res.status(500).json({ error: "Google Authentication is not configured on the server." });
+    }
+
+    let payload;
+    try {
+      const ticket = await googleClient.verifyIdToken({
+        idToken,
+        audience: clientId
+      });
+      payload = ticket.getPayload();
+    } catch (err) {
+      console.error("Google token verification failed:", err);
+      return res.status(401).json({ error: "Invalid Google ID Token" });
+    }
+
+    const { email, name, picture, email_verified } = payload;
+
+    if (!email_verified) {
+      return res.status(400).json({ error: "Google email is not verified" });
+    }
+
+    let user = await User.findOne({ email: email.toLowerCase() });
+
+    if (!user) {
+      user = await User.create({
+        name: name || email.split("@")[0],
+        email: email.toLowerCase(),
+        profilePhotoUrl: picture,
+        isSellerVerified: false
+      });
+    } else if (!user.profilePhotoUrl && picture) {
+      user.profilePhotoUrl = picture;
+      await user.save();
+    }
+
+    const token = signJwt(user);
+    return res.json({ token, user: user.toSafeJSON() });
+  } catch (err) {
+    return next(err);
+  }
+});
+
 
 const forgotPasswordSchema = z.object({
   body: z.object({

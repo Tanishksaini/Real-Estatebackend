@@ -4,7 +4,7 @@ const userSchema = new mongoose.Schema(
   {
     name: { type: String, trim: true },
     email: { type: String, required: true, trim: true, lowercase: true, unique: true, index: true },
-    passwordHash: { type: String, required: true },
+    passwordHash: { type: String, required: false },
     phone: { type: String, trim: true },
     profilePhotoUrl: { type: String, trim: true },
     isSellerVerified: { type: Boolean, default: false },

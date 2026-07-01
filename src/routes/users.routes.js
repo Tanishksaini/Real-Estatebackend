@@ -79,6 +79,12 @@ usersRouter.post("/login", validate(loginSchema), async (req, res, next) => {
     const user = await User.findOne({ email });
     if (!user) return res.status(401).json({ error: "Invalid email or password" });
 
+    if (!user.passwordHash) {
+      return res.status(400).json({
+        error: "This account was registered using Google. Please log in using Google."
+      });
+    }
+
     const ok = await verifyPassword(password, user.passwordHash);
     if (!ok) return res.status(401).json({ error: "Invalid email or password" });
 
