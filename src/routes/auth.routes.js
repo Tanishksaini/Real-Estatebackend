@@ -7,9 +7,11 @@ const {
   verifyPassword,
   signJwt,
   generatePasswordResetOtp,
-  hashPasswordResetOtp
+  hashPasswordResetOtp,
+  generateEmailVerificationOtp,
+  hashEmailVerificationOtp
 } = require("../utils/auth");
-const { sendPasswordResetOtp } = require("../utils/mail");
+const { sendPasswordResetOtp, sendEmailVerificationOtp } = require("../utils/mail");
 const { validate } = require("../utils/validate");
 const { OAuth2Client } = require("google-auth-library");
 
@@ -42,19 +44,53 @@ const signupSchema = z.object({
 const handleSignup = async (req, res, next) => {
   try {
     const { name, email, password, phone } = req.validated.body;
+    const emailLower = email.toLowerCase();
 
-    const existing = await User.findOne({ email });
-    if (existing) return res.status(409).json({ error: "Email already registered" });
+    let user = await User.findOne({ email: emailLower });
 
-    const user = await User.create({
-      name,
-      email,
-      phone,
-      passwordHash: await hashPassword(password)
-    });
+    if (user && user.isEmailVerified) {
+      return res.status(409).json({ error: "Email already registered" });
+    }
 
-    const token = signJwt(user);
-    return res.status(201).json({ token, user: user.toSafeJSON() });
+    const { otp, hashed, expires } = generateEmailVerificationOtp();
+    const passwordHash = await hashPassword(password);
+
+    if (user) {
+      user.name = name;
+      user.phone = phone;
+      user.passwordHash = passwordHash;
+      user.emailVerificationOtp = hashed;
+      user.emailVerificationExpires = expires;
+      await user.save();
+    } else {
+      user = await User.create({
+        name,
+        email: emailLower,
+        phone,
+        passwordHash,
+        isEmailVerified: false,
+        emailVerificationOtp: hashed,
+        emailVerificationExpires: expires
+      });
+    }
+
+    try {
+      await sendEmailVerificationOtp(emailLower, otp);
+    } catch (mailErr) {
+      console.error("Failed to send verification email:", mailErr);
+      return res.status(500).json({ error: "Failed to send verification email. Please try again." });
+    }
+
+    const response = {
+      message: "Verification OTP sent to your email. Please verify to complete registration.",
+      email: emailLower
+    };
+
+    if (process.env.SIGNUP_RETURN_OTP === "true") {
+      response.otp = otp;
+    }
+
+    return res.status(200).json(response);
   } catch (err) {
     return next(err);
   }
@@ -86,6 +122,18 @@ authRouter.post("/login", validate(loginSchema), async (req, res, next) => {
     const ok = await verifyPassword(password, user.passwordHash);
     if (!ok) return res.status(401).json({ error: "Invalid email or password" });
 
+    // Auto-migrate legacy users who don't have isEmailVerified set
+    if (user.isEmailVerified === undefined) {
+      user.isEmailVerified = true;
+      await user.save({ validateBeforeSave: false });
+    }
+
+    if (user.isEmailVerified === false) {
+      return res.status(400).json({
+        error: "Email is not verified. Please verify your email first."
+      });
+    }
+
     const token = signJwt(user);
     return res.json({ token, user: user.toSafeJSON() });
   } catch (err) {
@@ -95,13 +143,31 @@ authRouter.post("/login", validate(loginSchema), async (req, res, next) => {
 
 const googleLoginSchema = z.object({
   body: z.object({
-    idToken: z.string().trim().min(1, "Google ID Token is required")
+    idToken: z.string().trim().optional(),
+    token: z.string().trim().optional(),
+    credential: z.string().trim().optional()
   })
 });
 
 authRouter.post("/google", validate(googleLoginSchema), async (req, res, next) => {
   try {
-    const { idToken } = req.validated.body;
+    const { idToken: bodyIdToken, token: bodyToken, credential } = req.validated.body;
+    let idToken = bodyIdToken || bodyToken || credential;
+
+    // Try to extract from Authorization header if not found in body
+    if (!idToken && req.headers.authorization) {
+      const auth = req.headers.authorization;
+      if (auth.toLowerCase().startsWith("bearer ")) {
+        idToken = auth.substring(7);
+      } else {
+        idToken = auth;
+      }
+    }
+
+    if (!idToken || !idToken.trim()) {
+      return res.status(400).json({ error: "Google ID Token is required (send via idToken, token, credential in body, or Authorization header)" });
+    }
+
     const clientId = process.env.GOOGLE_CLIENT_ID;
 
     if (!clientId) {
@@ -133,11 +199,22 @@ authRouter.post("/google", validate(googleLoginSchema), async (req, res, next) =
         name: name || email.split("@")[0],
         email: email.toLowerCase(),
         profilePhotoUrl: picture,
-        isSellerVerified: false
+        isSellerVerified: false,
+        isEmailVerified: true
       });
-    } else if (!user.profilePhotoUrl && picture) {
-      user.profilePhotoUrl = picture;
-      await user.save();
+    } else {
+      let changed = false;
+      if (!user.profilePhotoUrl && picture) {
+        user.profilePhotoUrl = picture;
+        changed = true;
+      }
+      if (!user.isEmailVerified) {
+        user.isEmailVerified = true;
+        changed = true;
+      }
+      if (changed) {
+        await user.save();
+      }
     }
 
     const token = signJwt(user);
@@ -223,6 +300,92 @@ authRouter.post("/reset-password", validate(resetPasswordSchema), async (req, re
       token: jwtToken,
       user: user.toSafeJSON()
     });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+const verifyEmailSchema = z.object({
+  body: z.object({
+    email: z.string().trim().email(),
+    otp: z.string().trim().regex(/^\d{6}$/, "OTP must be 6 digits")
+  })
+});
+
+authRouter.post("/verify-email", validate(verifyEmailSchema), async (req, res, next) => {
+  try {
+    const { email, otp } = req.validated.body;
+    const emailLower = email.toLowerCase();
+    const hashedOtp = hashEmailVerificationOtp(otp);
+
+    const user = await User.findOne({
+      email: emailLower,
+      emailVerificationOtp: hashedOtp,
+      emailVerificationExpires: { $gt: new Date() }
+    }).select("+emailVerificationOtp +emailVerificationExpires");
+
+    if (!user) {
+      return res.status(400).json({ error: "Invalid or expired OTP" });
+    }
+
+    user.isEmailVerified = true;
+    user.emailVerificationOtp = undefined;
+    user.emailVerificationExpires = undefined;
+    await user.save();
+
+    const jwtToken = signJwt(user);
+    return res.json({
+      message: "Email verification successful",
+      token: jwtToken,
+      user: user.toSafeJSON()
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+const resendVerificationSchema = z.object({
+  body: z.object({
+    email: z.string().trim().email()
+  })
+});
+
+authRouter.post("/resend-verification-otp", validate(resendVerificationSchema), async (req, res, next) => {
+  try {
+    const { email } = req.validated.body;
+    const emailLower = email.toLowerCase();
+
+    const user = await User.findOne({ email: emailLower });
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (user.isEmailVerified) {
+      return res.status(400).json({ error: "Email is already verified" });
+    }
+
+    const { otp, hashed, expires } = generateEmailVerificationOtp();
+    user.emailVerificationOtp = hashed;
+    user.emailVerificationExpires = expires;
+    await user.save();
+
+    try {
+      await sendEmailVerificationOtp(emailLower, otp);
+    } catch (mailErr) {
+      console.error("Failed to send verification email:", mailErr);
+      return res.status(500).json({ error: "Failed to send verification email. Please try again." });
+    }
+
+    const response = {
+      message: "Verification OTP resent to your email.",
+      email: emailLower
+    };
+
+    if (process.env.SIGNUP_RETURN_OTP === "true") {
+      response.otp = otp;
+    }
+
+    return res.json(response);
   } catch (err) {
     return next(err);
   }

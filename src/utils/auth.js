@@ -3,6 +3,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
 const RESET_OTP_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
+const EMAIL_VERIFICATION_OTP_EXPIRY_MS = 15 * 60 * 1000; // 15 minutes
 
 function generatePasswordResetOtp() {
   const otp = String(crypto.randomInt(100000, 1000000));
@@ -12,6 +13,17 @@ function generatePasswordResetOtp() {
 }
 
 function hashPasswordResetOtp(otp) {
+  return crypto.createHash("sha256").update(String(otp).trim()).digest("hex");
+}
+
+function generateEmailVerificationOtp() {
+  const otp = String(crypto.randomInt(100000, 1000000));
+  const hashed = hashEmailVerificationOtp(otp);
+  const expires = new Date(Date.now() + EMAIL_VERIFICATION_OTP_EXPIRY_MS);
+  return { otp, hashed, expires };
+}
+
+function hashEmailVerificationOtp(otp) {
   return crypto.createHash("sha256").update(String(otp).trim()).digest("hex");
 }
 
@@ -44,6 +56,8 @@ module.exports = {
   verifyPassword,
   signJwt,
   generatePasswordResetOtp,
-  hashPasswordResetOtp
+  hashPasswordResetOtp,
+  generateEmailVerificationOtp,
+  hashEmailVerificationOtp
 };
 

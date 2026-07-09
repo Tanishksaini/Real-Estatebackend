@@ -18,12 +18,43 @@ const app = express();
 app.set("trust proxy", 1);
 
 app.use(helmet());
-app.use(
-  cors({
-    origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(",") : true,
-    credentials: true
-  })
-);
+const allowedOrigins = [
+  "https://www.dealveel.com",
+  "https://dealveel.com",
+  "http://localhost:5173",
+];
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    console.log("Incoming Origin:", origin);
+
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    console.error("CORS BLOCKED:", origin);
+
+    return callback(new Error(`Not allowed by CORS: ${origin}`));
+  },
+
+  credentials: true,
+
+  methods: [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "OPTIONS",
+  ],
+
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+  ],
+};
+
+app.use(cors(corsOptions));
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -32,7 +63,7 @@ app.use((req, res, next) => {
   if (req.body) {
     const jsonFields = ["location", "geo", "area", "price", "specs"];
     const arrayFields = ["amenities"];
-    
+
     // Parse objects
     jsonFields.forEach(field => {
       if (req.body[field] && typeof req.body[field] === "string") {
@@ -43,7 +74,7 @@ app.use((req, res, next) => {
         }
       }
     });
-    
+
     // Parse arrays
     arrayFields.forEach(field => {
       if (req.body[field] && typeof req.body[field] === "string") {
@@ -59,7 +90,7 @@ app.use((req, res, next) => {
     if (!req.body.geo) {
       const latVal = req.body.lat ?? req.body.latitude;
       const lngVal = req.body.lng ?? req.body.longitude ?? req.body.lag ?? req.body.lon ?? req.body.long;
-      
+
       if (latVal !== undefined && lngVal !== undefined) {
         const lat = Number(latVal);
         const lng = Number(lngVal);

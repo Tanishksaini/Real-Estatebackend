@@ -9,7 +9,10 @@ const userSchema = new mongoose.Schema(
     profilePhotoUrl: { type: String, trim: true },
     isSellerVerified: { type: Boolean, default: false },
     passwordResetOtp: { type: String, select: false },
-    passwordResetExpires: { type: Date, select: false }
+    passwordResetExpires: { type: Date, select: false },
+    isEmailVerified: { type: Boolean, default: false },
+    emailVerificationOtp: { type: String, select: false },
+    emailVerificationExpires: { type: Date, select: false }
   },
   { timestamps: true }
 );
