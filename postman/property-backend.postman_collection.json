@@ -56,11 +56,14 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "const json = pm.response.json();",
-                  "if (json.token) pm.environment.set('token', json.token);",
-                  "if (json.user && json.user.id) pm.environment.set('userId', json.user.id);",
-                  "if (json.user && json.user.email) pm.environment.set('email', json.user.email);"
+                  "pm.test('Has message', () => pm.expect(json.message).to.be.a('string'));",
+                  "if (json.otp) {",
+                  "  pm.environment.set('emailVerificationOtp', json.otp);",
+                  "  console.log('Verification OTP saved to emailVerificationOtp (dev mode)');",
+                  "}",
+                  "if (json.email) pm.environment.set('email', json.email);"
                 ]
               }
             }
@@ -72,7 +75,8 @@
               "mode": "raw",
               "raw": "{\n  \"name\": \"Test User\",\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"confirmPassword\": \"{{password}}\",\n  \"phone\": \"9999999999\"\n}"
             },
-            "url": "{{baseUrl}}/api/auth/signup"
+            "url": "{{baseUrl}}/api/auth/signup",
+            "description": "Signup with name, email, password, confirmPassword and phone. Sends verification OTP to email. If SIGNUP_RETURN_OTP=true in .env, response includes `otp` and Postman saves it to `emailVerificationOtp` environment variable."
           }
         },
         {
@@ -83,7 +87,37 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Has message', () => pm.expect(json.message).to.be.a('string'));",
+                  "if (json.otp) {",
+                  "  pm.environment.set('emailVerificationOtp', json.otp);",
+                  "  console.log('Verification OTP saved to emailVerificationOtp (dev mode)');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test User\",\n  \"email\": \"register@example.com\",\n  \"password\": \"secret123\",\n  \"confirmPassword\": \"secret123\",\n  \"phone\": \"9999999999\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/register",
+            "description": "Alias for signup. Sends verification OTP to email."
+          }
+        },
+        {
+          "name": "1c. POST /api/auth/verify-email",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "const json = pm.response.json();",
                   "if (json.token) pm.environment.set('token', json.token);",
                   "if (json.user && json.user.id) pm.environment.set('userId', json.user.id);"
@@ -96,9 +130,66 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Test User\",\n  \"email\": \"register@example.com\",\n  \"password\": \"secret123\",\n  \"confirmPassword\": \"secret123\",\n  \"phone\": \"9999999999\"\n}"
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"otp\": \"{{emailVerificationOtp}}\"\n}"
             },
-            "url": "{{baseUrl}}/api/auth/register"
+            "url": "{{baseUrl}}/api/auth/verify-email",
+            "description": "Verify email with OTP received during signup/register. Returns JWT token."
+          }
+        },
+        {
+          "name": "1d. POST /api/auth/resend-verification-otp",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "if (json.otp) {",
+                  "  pm.environment.set('emailVerificationOtp', json.otp);",
+                  "  console.log('Verification OTP saved to emailVerificationOtp (dev mode)');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/resend-verification-otp",
+            "description": "Resend email verification OTP."
+          }
+        },
+        {
+          "name": "1e. POST /api/auth/google",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "if (json.token) pm.environment.set('token', json.token);",
+                  "if (json.user && json.user.id) pm.environment.set('userId', json.user.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idToken\": \"google-id-token-here\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/google",
+            "description": "Google authentication with ID token/credential. Creates user if doesn't exist and returns JWT token."
           }
         },
         {
@@ -666,6 +757,47 @@
             "header": [],
             "url": "{{baseUrl}}/api/properties/{{propertyId}}",
             "description": "Owner deletes property and all related data"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Documents",
+      "description": "Endpoints to list and retrieve public policy documents",
+      "item": [
+        {
+          "name": "GET /api/documents",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Has documents array', () => pm.expect(json.documents).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/documents",
+            "description": "List all documents inside the documents directory with name, size, and dynamic url."
+          }
+        },
+        {
+          "name": "GET /api/documents/:filename",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/About Dealveel.pdf",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "documents", "About Dealveel.pdf"]
+            },
+            "description": "Serve/Download the document. To prompt a download attachment rather than inline view, pass query parameter `?download=true`."
           }
         }
       ]

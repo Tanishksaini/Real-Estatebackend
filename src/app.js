@@ -12,6 +12,7 @@ const { authRouter } = require("./routes/auth.routes");
 const { usersRouter } = require("./routes/users.routes");
 const { propertiesRouter } = require("./routes/properties.routes");
 const { profileRouter } = require("./routes/profile.routes");
+const { documentsRouter } = require("./routes/documents.routes");
 
 const app = express();
 
@@ -126,6 +127,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/profile", profileRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/properties", propertiesRouter);
+app.use("/api/documents", documentsRouter);
 
 app.use(notFound);
 app.use(errorHandler);
