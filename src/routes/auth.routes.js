@@ -2,6 +2,7 @@ const express = require("express");
 const { z } = require("zod");
 
 const { User } = require("../models/User");
+const { OTP } = require("../models/OTP");
 const {
   hashPassword,
   verifyPassword,
@@ -14,6 +15,7 @@ const {
 const { sendPasswordResetOtp, sendEmailVerificationOtp } = require("../utils/mail");
 const { validate } = require("../utils/validate");
 const { OAuth2Client } = require("google-auth-library");
+const sendOtpToPhone = require("../utils/sendOtp");
 
 const authRouter = express.Router();
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -386,6 +388,200 @@ authRouter.post("/resend-verification-otp", validate(resendVerificationSchema), 
     }
 
     return res.json(response);
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// Generate 4-digit OTP
+const generateOTP = () => {
+  return Math.floor(1000 + Math.random() * 9000).toString();
+};
+
+const sendOtpSchema = z.object({
+  body: z.object({
+    phoneNumber: z.string().trim().min(6).max(20)
+  })
+});
+
+const verifyOtpSchema = z.object({
+  body: z.object({
+    phoneNumber: z.string().trim().min(6).max(20),
+    otp: z.string().trim().min(4).max(6),
+    fullName: z.string().trim().optional(),
+    name: z.string().trim().optional(),
+    email: z.string().trim().email(),
+    city: z.string().trim().optional(),
+    studioName: z.string().trim().optional(),
+    profession: z.string().trim().optional(),
+    gender: z.string().trim().optional(),
+    age: z.coerce.number().optional()
+  })
+});
+
+// 1. Send OTP for phone registration/verification
+authRouter.post("/send-otp", validate(sendOtpSchema), async (req, res, next) => {
+  try {
+    const { phoneNumber } = req.validated.body;
+
+    const otp = generateOTP();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiry
+
+    // Delete old OTPs for this number
+    await OTP.deleteMany({ phoneNumber });
+
+    // Store new OTP
+    await OTP.create({
+      phoneNumber,
+      otp,
+      expiresAt
+    });
+
+    await sendOtpToPhone(phoneNumber, otp);
+
+    const response = {
+      success: true,
+      message: "OTP sent successfully"
+    };
+
+    if (process.env.SIGNUP_RETURN_OTP === "true" || process.env.NODE_ENV === "development") {
+      response.otp = otp;
+    }
+
+    return res.status(200).json(response);
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// 2. Verify OTP & Login/Register User
+authRouter.post("/verify-otp", validate(verifyOtpSchema), async (req, res, next) => {
+  try {
+    const {
+      phoneNumber,
+      otp,
+      fullName,
+      name,
+      email,
+      city,
+      studioName,
+      profession,
+      gender,
+      age
+    } = req.validated.body;
+
+    // Find the latest OTP record
+    const record = await OTP.findOne({ phoneNumber });
+
+    if (!record) {
+      return res.status(400).json({ success: false, error: "OTP not found or expired", message: "OTP not found or expired" });
+    }
+
+    if (record.otp !== otp) {
+      return res.status(400).json({ success: false, error: "Invalid OTP", message: "Invalid OTP" });
+    }
+
+    if (record.expiresAt < new Date()) {
+      await OTP.deleteMany({ phoneNumber });
+      return res.status(400).json({ success: false, error: "OTP expired", message: "OTP expired" });
+    }
+
+    // Delete OTP after successful use
+    await OTP.deleteMany({ phoneNumber });
+
+    // Look for existing user by phone or email
+    let user = await User.findOne({
+      $or: [
+        { phone: phoneNumber },
+        { email: email.toLowerCase() }
+      ]
+    });
+
+    if (!user) {
+      // Create new user
+      user = await User.create({
+        phone: phoneNumber,
+        name: fullName || name || email.split("@")[0],
+        email: email.toLowerCase(),
+        city,
+        studioName,
+        profession,
+        gender,
+        age,
+        isEmailVerified: true
+      });
+    } else {
+      // Update existing user properties and verify
+      const updateData = {
+        isEmailVerified: true,
+        phone: user.phone || phoneNumber
+      };
+
+      if (fullName || name) updateData.name = fullName || name;
+      if (city) updateData.city = city;
+      if (studioName) updateData.studioName = studioName;
+      if (profession) updateData.profession = profession;
+      if (gender) updateData.gender = gender;
+      if (age !== undefined) updateData.age = age;
+
+      await user.updateOne(updateData);
+      
+      // Fetch fresh user details
+      user = await User.findById(user._id);
+    }
+
+    const token = signJwt(user);
+
+    return res.status(200).json({
+      success: true,
+      token,
+      user: user.toSafeJSON()
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// 3. Send Login OTP (Checks if user exists first)
+authRouter.post("/send-login-otp", validate(sendOtpSchema), async (req, res, next) => {
+  try {
+    const { phoneNumber } = req.validated.body;
+
+    const user = await User.findOne({ phone: phoneNumber });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: "User not registered. Please sign up first.",
+        message: "User not registered. Please sign up first."
+      });
+    }
+
+    const otp = generateOTP();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiry
+
+    // Delete old OTPs
+    await OTP.deleteMany({ phoneNumber });
+
+    // Store new OTP
+    await OTP.create({
+      phoneNumber,
+      otp,
+      expiresAt
+    });
+
+    await sendOtpToPhone(phoneNumber, otp);
+
+    const response = {
+      success: true,
+      message: "Login OTP sent successfully"
+    };
+
+    if (process.env.SIGNUP_RETURN_OTP === "true" || process.env.NODE_ENV === "development") {
+      response.otp = otp;
+    }
+
+    return res.status(200).json(response);
   } catch (err) {
     return next(err);
   }

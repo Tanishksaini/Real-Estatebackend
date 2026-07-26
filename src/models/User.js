@@ -12,7 +12,12 @@ const userSchema = new mongoose.Schema(
     passwordResetExpires: { type: Date, select: false },
     isEmailVerified: { type: Boolean, default: false },
     emailVerificationOtp: { type: String, select: false },
-    emailVerificationExpires: { type: Date, select: false }
+    emailVerificationExpires: { type: Date, select: false },
+    city: { type: String, trim: true },
+    studioName: { type: String, trim: true },
+    profession: { type: String, trim: true },
+    gender: { type: String, trim: true },
+    age: { type: Number }
   },
   { timestamps: true }
 );
@@ -28,6 +33,11 @@ userSchema.methods.toSafeJSON = function toSafeJSON() {
     role: 'user',
     verified: this.isSellerVerified,
     isSellerVerified: this.isSellerVerified,
+    city: this.city,
+    studioName: this.studioName,
+    profession: this.profession,
+    gender: this.gender,
+    age: this.age,
     createdAt: this.createdAt,
     updatedAt: this.updatedAt
   };
