@@ -1,54 +1,54 @@
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
+const fs = require("fs");
+const path = require("path");
+
+function getResendClient() {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey || apiKey === "re_your_api_key") {
+    throw new Error("RESEND_API_KEY is not configured.");
+  }
+  return new Resend(apiKey);
+}
 
 function getNodemailerConfig() {
-  const user = process.env.EMAIL_USER;
-  const pass = process.env.EMAIL_PASS;
+  return null;
+}
 
-  if (!user || !pass) {
+function getLogoAttachment() {
+  const logoPath = path.join(__dirname, "../../documents/Email_Logo.jpeg");
+  try {
+    if (fs.existsSync(logoPath)) {
+      const content = fs.readFileSync(logoPath);
+      return {
+        filename: "Email_Logo.jpeg",
+        content: content,
+        contentId: "email-logo",
+        contentType: "image/jpeg",
+      };
+    } else {
+      console.warn("Email logo file not found at:", logoPath);
+      return null;
+    }
+  } catch (error) {
+    console.error("Error reading logo file:", error);
     return null;
   }
-
-  return { user, pass };
 }
 
 async function sendPasswordResetOtp(email, otp) {
-  const cfg = getNodemailerConfig();
-
-  if (!cfg) {
-    throw new Error(
-      "EMAIL_USER and EMAIL_PASS are not configured."
-    );
-  }
-
-  const transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 587,
-    secure: false,
-    requireTLS: true,
-    auth: {
-      user: cfg.user,
-      pass: cfg.pass,
-    },
-    tls: {
-      rejectUnauthorized: false,
-      family: 4,
-    },
-  });
-
-  await transporter.verify();
-
+  const resend = getResendClient();
   const currentYear = new Date().getFullYear();
+  const fromEmail = process.env.RESEND_FROM || "DealVeel Properties <onboarding@resend.dev>";
+  
+  const logoAttachment = getLogoAttachment();
+  const attachments = logoAttachment ? [logoAttachment] : [];
 
-  const mailOptions = {
-    from: `"DealVeel Properties" <${cfg.user}>`,
-    to: email,
-    subject: "Password Reset OTP - DealVeel Properties",
-    text: `Your password reset OTP is ${otp}. Valid for 10 minutes.`,
-    html: `
+  const htmlContent = `
       <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; padding: 45px 20px; text-align: center; margin: 0;">
         <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 550px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08); border-collapse: collapse;">
           <tr>
             <td style="background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); padding: 35px 30px; text-align: center;">
+              ${logoAttachment ? `<img src="cid:email-logo" alt="DealVeel Logo" style="height: 60px; width: auto; margin-bottom: 15px; border-radius: 8px; display: inline-block;" />` : ""}
               <h1 style="color: #ffffff; margin: 0; font-size: 26px; font-weight: 700; letter-spacing: 0.5px;">DealVeel</h1>
               <p style="color: #bfdbfe; margin: 5px 0 0 0; font-size: 14px; font-weight: 500; text-transform: uppercase; letter-spacing: 1px;">Properties</p>
             </td>
@@ -76,52 +76,40 @@ async function sendPasswordResetOtp(email, otp) {
           </tr>
         </table>
       </div>
-    `,
-  };
+    `;
 
-  const info = await transporter.sendMail(mailOptions);
-  console.log("Password reset OTP email sent:", info.messageId);
-  return info;
+  const { data, error } = await resend.emails.send({
+    from: fromEmail,
+    to: [email],
+    subject: "Password Reset OTP - DealVeel Properties",
+    text: `Your password reset OTP is ${otp}. Valid for 10 minutes.`,
+    html: htmlContent,
+    attachments: attachments,
+  });
+
+  if (error) {
+    console.error("Error sending password reset email via Resend:", error);
+    throw error;
+  }
+
+  console.log("Password reset OTP email sent:", data?.id);
+  return data;
 }
 
 async function sendEmailVerificationOtp(email, otp) {
-  const cfg = getNodemailerConfig();
-
-  if (!cfg) {
-    throw new Error(
-      "EMAIL_USER and EMAIL_PASS are not configured."
-    );
-  }
-
-  const transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 587,
-    secure: false,
-    requireTLS: true,
-    auth: {
-      user: cfg.user,
-      pass: cfg.pass,
-    },
-    tls: {
-      rejectUnauthorized: false,
-      family: 4,
-    },
-  });
-
-  await transporter.verify();
-
+  const resend = getResendClient();
   const currentYear = new Date().getFullYear();
+  const fromEmail = process.env.RESEND_FROM || "DealVeel Properties <onboarding@resend.dev>";
+  
+  const logoAttachment = getLogoAttachment();
+  const attachments = logoAttachment ? [logoAttachment] : [];
 
-  const mailOptions = {
-    from: `"DealVeel Properties" <${cfg.user}>`,
-    to: email,
-    subject: "Verify Your Email - DealVeel Properties",
-    text: `Your email verification OTP is ${otp}. Valid for 15 minutes.`,
-    html: `
+  const htmlContent = `
       <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; padding: 45px 20px; text-align: center; margin: 0;">
         <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 550px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08); border-collapse: collapse;">
           <tr>
             <td style="background: linear-gradient(135deg, #0d9488 0%, #0f766e 100%); padding: 35px 30px; text-align: center;">
+              ${logoAttachment ? `<img src="cid:email-logo" alt="DealVeel Logo" style="height: 60px; width: auto; margin-bottom: 15px; border-radius: 8px; display: inline-block;" />` : ""}
               <h1 style="color: #ffffff; margin: 0; font-size: 26px; font-weight: 700; letter-spacing: 0.5px;">DealVeel</h1>
               <p style="color: #99f6e4; margin: 5px 0 0 0; font-size: 14px; font-weight: 500; text-transform: uppercase; letter-spacing: 1px;">Properties</p>
             </td>
@@ -149,12 +137,24 @@ async function sendEmailVerificationOtp(email, otp) {
           </tr>
         </table>
       </div>
-    `,
-  };
+    `;
 
-  const info = await transporter.sendMail(mailOptions);
-  console.log("Email verification OTP sent:", info.messageId);
-  return info;
+  const { data, error } = await resend.emails.send({
+    from: fromEmail,
+    to: [email],
+    subject: "Verify Your Email - DealVeel Properties",
+    text: `Your email verification OTP is ${otp}. Valid for 15 minutes.`,
+    html: htmlContent,
+    attachments: attachments,
+  });
+
+  if (error) {
+    console.error("Error sending email verification email via Resend:", error);
+    throw error;
+  }
+
+  console.log("Email verification OTP sent:", data?.id);
+  return data;
 }
 
 module.exports = {
